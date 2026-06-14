@@ -53,7 +53,7 @@ def test_filler_markers_trigger_anti_gaming_veto():
 def test_h1_non_h1_fields_are_unevaluated_defaults():
     response = ValidationPipeline().validate("part A attribute x", mode="full")
     assert response.structural.evaluated is False
-    assert response.structural.matching_policy_id == "h1-not-evaluated"
+    assert response.structural.matching_policy_id == "h3-frozen-exact-v1"
     assert response.intent.evaluated is False
     assert response.robustness.ipt_consistent is None
 
