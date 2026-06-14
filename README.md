@@ -1,6 +1,6 @@
 # SYVERN
 
-SYVERN is the SysML V2 Evaluation and Reward Engine. This repository currently implements the H1 T0 core slice from the design docs: a deterministic validation and reward service with a stable `/validate` API, Stage 0-3 pipeline, unified JSON response, cache/fingerprint behavior, L1 rules, veto checks, and reward mapping.
+SYVERN is the SysML V2 Evaluation and Reward Engine. This repository currently implements the H1 T0 core plus the H2 deterministic robustness slice from the design docs: a validation and reward service with `/validate`, `/validate_batch`, Stage 0-3 pipeline, cross-parser element-summary agreement in `full` mode, batch `pass@k` / `stable@k` metrics, cache/fingerprint behavior, L1 rules, veto checks, and reward mapping.
 
 ## H1 Scope
 
@@ -20,6 +20,24 @@ Not implemented in H1:
 - Stage 4 structural matching
 - Stage 5 LLM intent judging
 - IPT, persistence, dashboards, or production monitoring
+
+## H2 Scope
+
+Implemented:
+
+- Normalized element summaries for parser adapter results
+- `full` mode parser agreement using parse status plus element-summary multiset equality
+- `POST /validate_batch` for deterministic batch robustness evaluation
+- `pass_at_k` and `stable_at_k` aggregate metrics
+- Stub markers `parser_disagreement` and `summary_disagreement` for exercising cross-parser veto behavior
+
+Not implemented in H2:
+
+- Real SysML Pilot or MontiCore integration
+- Stage 4 structural matching
+- IPT perturbation generation
+- LLM or human intent judging
+- Persistent storage, dashboards, or production monitoring
 
 ## Install
 
@@ -45,4 +63,10 @@ Then call:
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/validate -ContentType "application/json" -Body '{"text":"part A attribute x","mode":"online_reward"}'
 ```
 
-The H1 adapter behavior is a deterministic harness, not a SysML parser. Markers such as `syntax_error`, `unresolved_ref`, `type_error`, and `parser_disagreement` exercise the stage gates for tests and local development.
+Batch robustness example:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/validate_batch -ContentType "application/json" -Body '{"texts":["part A attribute x","part B unresolved_ref","part C type_error"],"mode":"online_reward"}'
+```
+
+The adapter behavior is a deterministic harness, not a SysML parser. Markers such as `syntax_error`, `unresolved_ref`, `type_error`, `parser_disagreement`, and `summary_disagreement` exercise the stage gates and H2 robustness checks for tests and local development.
