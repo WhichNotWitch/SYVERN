@@ -34,3 +34,19 @@ def test_cache_returns_stored_response_by_exact_key():
     payload = {"sample_id": "sample-abc"}
     cache.set(key, payload)
     assert cache.get(key) == payload
+
+
+def test_cache_get_isolates_nested_validation_payloads():
+    cache = InMemoryValidationCache()
+    key = CacheKey("abc", "fingerprint", "online_reward", "none")
+    payload = {
+        "sample_id": "sample-abc",
+        "meta": {"cache_hit": False},
+    }
+    cache.set(key, payload)
+
+    cached = cache.get(key)
+    assert cached is not None
+    cached["meta"]["cache_hit"] = True
+
+    assert cache.get(key)["meta"]["cache_hit"] is False

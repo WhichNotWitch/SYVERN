@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,12 +21,12 @@ class InMemoryValidationCache:
         item = self._items.get(key)
         if item is None:
             return None
-        return dict(item)
+        return copy.deepcopy(item)
 
     def set(self, key: CacheKey, value: dict[str, Any]) -> None:
         if not key.validator_fingerprint.strip():
             raise ValueError("validator_fingerprint must not be empty")
-        self._items[key] = dict(value)
+        self._items[key] = copy.deepcopy(value)
 
     def clear(self) -> None:
         self._items.clear()
