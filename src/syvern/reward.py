@@ -23,14 +23,27 @@ def compute_reward(response: ValidateResponse, settings: SyvernSettings) -> floa
     st = response.structural
     w = settings.weights
 
+    parse_passed = s.parse.reached and s.parse.ok and s.parse.parser_agreement
+    resolve_passed = parse_passed and s.resolve.reached and s.resolve.ok
+    typecheck_reached = resolve_passed and s.typecheck.reached
+    constraint_reached = resolve_passed and s.constraint.reached
+    t0_passed = (
+        parse_passed
+        and resolve_passed
+        and s.typecheck.reached
+        and s.typecheck.ok
+        and s.constraint.reached
+        and s.constraint.ok
+    )
+
     reward = 0.0
-    reward += w.w0 * (1 if s.parse.ok and s.parse.parser_agreement else 0)
-    reward += w.w1 * (1 if s.resolve.ok else 0)
-    reward += w.w2 * (1 - norm(s.typecheck.type_errors, settings.cap_type))
-    reward += w.w3 * (1 - norm(_constraint_weight(s.constraint.violations), settings.cap_cons))
-    reward += w.w4 * st.f1
-    reward += w.w5 * st.requirement_coverage
-    reward += w.w6 * (1 if response.robustness.ipt_consistent else 0)
+    reward += w.w0 * (1 if parse_passed else 0)
+    reward += w.w1 * (1 if resolve_passed else 0)
+    reward += w.w2 * (1 - norm(s.typecheck.type_errors, settings.cap_type) if typecheck_reached else 0)
+    reward += w.w3 * (1 - norm(_constraint_weight(s.constraint.violations), settings.cap_cons) if constraint_reached else 0)
+    reward += (w.w4 * st.f1) if t0_passed else 0
+    reward += (w.w5 * st.requirement_coverage) if t0_passed else 0
+    reward += w.w6 * (1 if t0_passed and response.robustness.ipt_consistent else 0)
     reward -= w.w7 * norm(st.hallucinated_elements, settings.cap_hall)
 
     return max(0.0, min(settings.r_max, reward))

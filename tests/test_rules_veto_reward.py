@@ -19,9 +19,13 @@ from syvern.settings import SyvernSettings
 from syvern.veto import evaluate_veto
 
 
-def _response(intent_score: float | None = None, veto: bool = False) -> ValidateResponse:
+def _response(
+    intent_score: float | None = None,
+    veto: bool = False,
+    stage: StageSummary | None = None,
+) -> ValidateResponse:
     settings = SyvernSettings()
-    stage = StageSummary(
+    stage = stage or StageSummary(
         parse=ParseStage(reached=True, ok=True, parser_agreement=True, errors=[]),
         resolve=ResolveStage(reached=True, ok=True, unresolved_refs=0, errors=[]),
         typecheck=TypecheckStage(reached=True, ok=True, type_errors=0, errors=[]),
@@ -96,3 +100,51 @@ def test_intent_score_does_not_affect_reward():
     low = compute_reward(_response(intent_score=0.0), settings)
     high = compute_reward(_response(intent_score=5.0), settings)
     assert low == high
+
+
+def test_reward_does_not_credit_downstream_when_parse_fails():
+    settings = SyvernSettings()
+    stage = StageSummary(
+        parse=ParseStage(reached=True, ok=False, parser_agreement=False, errors=[]),
+        resolve=ResolveStage(reached=True, ok=True, unresolved_refs=0, errors=[]),
+        typecheck=TypecheckStage(reached=True, ok=True, type_errors=0, errors=[]),
+        constraint=ConstraintStage(reached=True, ok=True, violations=[]),
+    )
+
+    assert compute_reward(_response(stage=stage), settings) == 0.0
+
+
+def test_reward_does_not_credit_unreached_typecheck_or_constraint_after_resolve_failure():
+    settings = SyvernSettings()
+    stage = StageSummary(
+        parse=ParseStage(reached=True, ok=True, parser_agreement=True, errors=[]),
+        resolve=ResolveStage(reached=True, ok=False, unresolved_refs=1, errors=[]),
+        typecheck=TypecheckStage(reached=False, ok=True, type_errors=0, errors=[]),
+        constraint=ConstraintStage(reached=False, ok=True, violations=[]),
+    )
+
+    assert compute_reward(_response(stage=stage), settings) == settings.weights.w0
+
+
+def test_reward_credits_reached_typecheck_and_only_reached_constraint():
+    settings = SyvernSettings()
+    stage_without_constraint = StageSummary(
+        parse=ParseStage(reached=True, ok=True, parser_agreement=True, errors=[]),
+        resolve=ResolveStage(reached=True, ok=True, unresolved_refs=0, errors=[]),
+        typecheck=TypecheckStage(reached=True, ok=False, type_errors=2, errors=[]),
+        constraint=ConstraintStage(reached=False, ok=True, violations=[]),
+    )
+    stage_with_constraint = StageSummary(
+        parse=ParseStage(reached=True, ok=True, parser_agreement=True, errors=[]),
+        resolve=ResolveStage(reached=True, ok=True, unresolved_refs=0, errors=[]),
+        typecheck=TypecheckStage(reached=True, ok=False, type_errors=2, errors=[]),
+        constraint=ConstraintStage(reached=True, ok=True, violations=[]),
+    )
+    typecheck_credit = settings.weights.w2 * (1 - 2 / settings.cap_type)
+
+    assert compute_reward(_response(stage=stage_without_constraint), settings) == (
+        settings.weights.w0 + settings.weights.w1 + typecheck_credit
+    )
+    assert compute_reward(_response(stage=stage_with_constraint), settings) == (
+        settings.weights.w0 + settings.weights.w1 + typecheck_credit + settings.weights.w3
+    )
