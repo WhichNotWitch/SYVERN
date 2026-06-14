@@ -66,6 +66,13 @@ def test_anti_gaming_rules_are_weighted():
     assert weighted_violations(violations) >= 2
 
 
+def test_repetition_rule_applies_below_min_tokens():
+    violations = evaluate_rules("x x", SyvernSettings())
+    rules = {v.rule for v in violations}
+    assert "no_excessive_repetition" in rules
+    assert "minimum_model_signal" in rules
+
+
 def test_veto_triggers_for_error_anti_gaming_rule():
     settings = SyvernSettings()
     violations = evaluate_rules("filler filler filler", settings)

@@ -21,7 +21,7 @@ def evaluate_rules(text: str, settings: SyvernSettings) -> list[Violation]:
     words = normalized.split()
     if words:
         most_common = Counter(words).most_common(1)[0][1]
-        if most_common / len(words) > settings.repetition_ratio and len(words) >= settings.min_tokens:
+        if most_common / len(words) > settings.repetition_ratio:
             violations.append(Violation(rule="no_excessive_repetition", severity="error", category="anti_gaming"))
 
     if 0 < len(words) < settings.min_tokens:
