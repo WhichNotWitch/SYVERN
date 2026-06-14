@@ -52,9 +52,9 @@ def test_parse_reference_ignores_malformed_entries():
 
 def test_exact_match_scores_all_structural_metrics():
     summary = match_structural(
-        generated=extract_element_summary("part vehicle.engine attribute vehicle.mass"),
-        reference=REFERENCE,
-        settings=SyvernSettings(),
+        extract_element_summary("part vehicle.engine attribute vehicle.mass"),
+        REFERENCE,
+        SyvernSettings(),
     )
 
     assert summary.evaluated is True

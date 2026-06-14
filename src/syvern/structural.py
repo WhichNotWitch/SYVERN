@@ -82,7 +82,6 @@ def f1_score(precision: float, recall: float) -> float:
 
 
 def match_structural(
-    *,
     generated: list[ElementSummary],
     reference: dict[str, Any] | None,
     settings: SyvernSettings,
