@@ -18,7 +18,7 @@ class RewardWeights:
 @dataclass(frozen=True)
 class SyvernSettings:
     validator_fingerprint: str = "syvern-h1-stub@0.1.0+rules@h1"
-    matching_policy_id: str = "h1-not-evaluated"
+    matching_policy_id: str = "h3-frozen-exact-v1"
     min_tokens: int = 3
     min_elements: int = 1
     repetition_ratio: float = 0.65
