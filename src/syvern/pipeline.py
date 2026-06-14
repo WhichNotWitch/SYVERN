@@ -4,6 +4,8 @@ import time
 
 from syvern.adapters.stub import MontiCoreStubAdapter, PilotStubAdapter
 from syvern.models import (
+    BatchMetaSummary,
+    BatchValidateResponse,
     ConstraintStage,
     IntentSummary,
     MetaSummary,
@@ -20,6 +22,7 @@ from syvern.models import (
 )
 from syvern.normalization import sha256_text
 from syvern.reward import compute_reward
+from syvern.robustness import aggregate_robustness
 from syvern.rules import evaluate_rules
 from syvern.settings import SyvernSettings
 from syvern.veto import evaluate_veto
@@ -85,6 +88,22 @@ class ValidationPipeline:
         stage = StageSummary(parse=parse, resolve=resolve, typecheck=typecheck, constraint=constraint)
 
         return self._finish(text=text, mode=mode, stage=stage, started=started)
+
+    def validate_many(self, texts: list[str], *, mode: Mode = "online_reward") -> BatchValidateResponse:
+        if not texts:
+            raise ValueError("texts must not be empty")
+        responses = [self.validate(text, mode=mode) for text in texts]
+        metrics = aggregate_robustness(responses)
+        return BatchValidateResponse(
+            sample_count=len(responses),
+            pass_at_k=metrics.pass_at_k,
+            stable_at_k=metrics.stable_at_k,
+            responses=responses,
+            meta=BatchMetaSummary(
+                mode=mode,
+                validator_fingerprint=self.settings.validator_fingerprint,
+            ),
+        )
 
     def _finish(self, *, text: str, mode: Mode, stage: StageSummary, started: float) -> ValidateResponse:
         semantic_path_passed = (
