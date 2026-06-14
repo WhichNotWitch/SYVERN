@@ -94,3 +94,83 @@ def test_validate_many_returns_batch_response_with_metrics_in_request_order():
         pipeline.validate("part B unresolved_ref", mode="online_reward").meta.text_hash,
         pipeline.validate("part C type_error", mode="online_reward").meta.text_hash,
     ]
+
+
+def _reference():
+    return {
+        "elements": [
+            {"type": "part", "qualified_name": "vehicle.engine"},
+            {"type": "attribute", "qualified_name": "vehicle.mass"},
+        ],
+        "requirements": ["req.power", "req.mass"],
+        "coverage": {
+            "req.power": ["vehicle.engine"],
+            "req.mass": ["vehicle.mass"],
+        },
+    }
+
+
+def test_full_mode_with_reference_evaluates_structural_stage():
+    response = ValidationPipeline().validate(
+        "part vehicle.engine attribute vehicle.mass",
+        mode="full",
+        reference=_reference(),
+    )
+
+    assert response.structural.evaluated is True
+    assert response.structural.precision == 1.0
+    assert response.structural.recall == 1.0
+    assert response.structural.f1 == 1.0
+    assert response.structural.requirement_coverage == 1.0
+    assert response.structural.hallucinated_elements == 0
+    assert response.structural.matching_policy_id == "h3-frozen-exact-v1"
+    assert response.tier_summary.t1_available is True
+    assert response.meta.reward == 1.0
+
+
+def test_full_mode_without_reference_keeps_structural_unevaluated():
+    response = ValidationPipeline().validate("part vehicle.engine attribute vehicle.mass", mode="full")
+
+    assert response.structural.evaluated is False
+    assert response.structural.f1 == 0.0
+    assert response.tier_summary.t1_available is False
+
+
+def test_online_reward_and_data_filter_do_not_evaluate_structural_stage():
+    for mode in ("online_reward", "data_filter"):
+        response = ValidationPipeline().validate(
+            "part vehicle.engine attribute vehicle.mass",
+            mode=mode,
+            reference=_reference(),
+        )
+
+        assert response.structural.evaluated is False
+        assert response.tier_summary.t1_available is False
+
+
+def test_t0_failure_or_veto_prevents_structural_evaluation():
+    type_failure = ValidationPipeline().validate(
+        "part vehicle.engine attribute vehicle.mass type_error",
+        mode="full",
+        reference=_reference(),
+    )
+    vetoed = ValidationPipeline().validate(
+        "part vehicle.engine attribute vehicle.mass summary_disagreement",
+        mode="full",
+        reference=_reference(),
+    )
+
+    assert type_failure.structural.evaluated is False
+    assert vetoed.veto.triggered is True
+    assert vetoed.structural.evaluated is False
+
+
+def test_validate_many_forwards_reference_to_each_full_response():
+    result = ValidationPipeline().validate_many(
+        ["part vehicle.engine attribute vehicle.mass"],
+        mode="full",
+        reference=_reference(),
+    )
+
+    assert result.responses[0].structural.evaluated is True
+    assert result.responses[0].structural.f1 == 1.0
