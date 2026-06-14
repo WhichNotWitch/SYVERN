@@ -15,7 +15,7 @@ from syvern.models import (
 )
 from syvern.reward import compute_reward
 from syvern.rules import evaluate_rules, weighted_violations
-from syvern.settings import SyvernSettings
+from syvern.settings import RewardWeights, SyvernSettings
 from syvern.veto import evaluate_veto
 
 
@@ -23,6 +23,8 @@ def _response(
     intent_score: float | None = None,
     veto: bool = False,
     stage: StageSummary | None = None,
+    structural: StructuralSummary | None = None,
+    robustness: RobustnessSummary | None = None,
 ) -> ValidateResponse:
     settings = SyvernSettings()
     stage = stage or StageSummary(
@@ -35,8 +37,8 @@ def _response(
         sample_id="sample",
         tier_summary=TierSummary(t0_pass=True, t1_available=False, veto=veto),
         stage=stage,
-        structural=StructuralSummary(matching_policy_id=settings.matching_policy_id),
-        robustness=RobustnessSummary(),
+        structural=structural or StructuralSummary(matching_policy_id=settings.matching_policy_id),
+        robustness=robustness or RobustnessSummary(),
         intent=IntentSummary(evaluated=intent_score is not None, score=intent_score, source=None),
         veto=VetoSummary(triggered=veto, reason="forced" if veto else None),
         monitor=MonitorSummary(),
@@ -114,6 +116,18 @@ def test_reward_does_not_credit_downstream_when_parse_fails():
     assert compute_reward(_response(stage=stage), settings) == 0.0
 
 
+def test_reward_does_not_credit_downstream_when_parser_disagrees():
+    settings = SyvernSettings()
+    stage = StageSummary(
+        parse=ParseStage(reached=True, ok=True, parser_agreement=False, errors=[]),
+        resolve=ResolveStage(reached=True, ok=True, unresolved_refs=0, errors=[]),
+        typecheck=TypecheckStage(reached=True, ok=True, type_errors=0, errors=[]),
+        constraint=ConstraintStage(reached=True, ok=True, violations=[]),
+    )
+
+    assert compute_reward(_response(stage=stage), settings) == 0.0
+
+
 def test_reward_does_not_credit_unreached_typecheck_or_constraint_after_resolve_failure():
     settings = SyvernSettings()
     stage = StageSummary(
@@ -148,3 +162,27 @@ def test_reward_credits_reached_typecheck_and_only_reached_constraint():
     assert compute_reward(_response(stage=stage_with_constraint), settings) == (
         settings.weights.w0 + settings.weights.w1 + typecheck_credit + settings.weights.w3
     )
+
+
+def test_reward_does_not_credit_positive_t1_terms_when_t0_fails():
+    settings = SyvernSettings(weights=RewardWeights(w6=0.05))
+    stage = StageSummary(
+        parse=ParseStage(reached=True, ok=True, parser_agreement=True, errors=[]),
+        resolve=ResolveStage(reached=True, ok=True, unresolved_refs=0, errors=[]),
+        typecheck=TypecheckStage(reached=True, ok=False, type_errors=1, errors=[]),
+        constraint=ConstraintStage(reached=True, ok=True, violations=[]),
+    )
+    structural = StructuralSummary(
+        f1=1.0,
+        requirement_coverage=1.0,
+        matching_policy_id=settings.matching_policy_id,
+    )
+    robustness = RobustnessSummary(ipt_consistent=True)
+    typecheck_credit = settings.weights.w2 * (1 - 1 / settings.cap_type)
+    expected_without_t1 = settings.weights.w0 + settings.weights.w1 + typecheck_credit + settings.weights.w3
+    would_include_t1 = expected_without_t1 + settings.weights.w4 + settings.weights.w5 + settings.weights.w6
+
+    reward = compute_reward(_response(stage=stage, structural=structural, robustness=robustness), settings)
+
+    assert reward == expected_without_t1
+    assert reward < would_include_t1
