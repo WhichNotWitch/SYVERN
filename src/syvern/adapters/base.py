@@ -3,13 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from syvern.models import ErrorDetail
+from syvern.models import ElementSummary, ErrorDetail
 
 
 @dataclass(frozen=True)
 class ParseResult:
     ok: bool
     errors: list[ErrorDetail] = field(default_factory=list)
+    element_summary: list[ElementSummary] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

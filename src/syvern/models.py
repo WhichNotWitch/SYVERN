@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 Mode = Literal["online_reward", "full", "data_filter"]
@@ -16,6 +16,17 @@ class ValidateRequest(BaseModel):
     k: int | None = Field(default=None, ge=1)
 
 
+class BatchValidateRequest(BaseModel):
+    texts: list[str] = Field(min_length=1)
+    reference: dict[str, Any] | None = None
+    mode: Mode = "online_reward"
+
+
+class BatchMetaSummary(BaseModel):
+    mode: Mode
+    validator_fingerprint: str
+
+
 class ErrorDetail(BaseModel):
     stage: str
     code: str
@@ -27,6 +38,19 @@ class Violation(BaseModel):
     rule: str
     severity: Severity
     category: str = "metamodel"
+
+
+class ElementSummary(BaseModel):
+    type: str
+    qualified_name: str
+
+    @field_validator("type", "qualified_name")
+    @classmethod
+    def normalize_non_empty(cls, value: str) -> str:
+        normalized = " ".join(value.strip().lower().split())
+        if not normalized:
+            raise ValueError("element summary fields must not be blank")
+        return normalized
 
 
 class ParseStage(BaseModel):
@@ -120,3 +144,11 @@ class ValidateResponse(BaseModel):
     veto: VetoSummary
     monitor: MonitorSummary
     meta: MetaSummary
+
+
+class BatchValidateResponse(BaseModel):
+    sample_count: int = Field(ge=1)
+    pass_at_k: float = Field(ge=0.0, le=1.0)
+    stable_at_k: float = Field(ge=0.0, le=1.0)
+    responses: list[ValidateResponse]
+    meta: BatchMetaSummary
