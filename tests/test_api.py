@@ -53,3 +53,46 @@ def test_cache_key_distinguishes_mode():
     assert online["meta"]["mode"] == "online_reward"
     assert full["meta"]["mode"] == "full"
     assert full["meta"]["cache_hit"] is False
+
+
+def test_validate_batch_returns_robustness_metrics_and_ordered_responses():
+    client = TestClient(app)
+    payload = {
+        "texts": [
+            "part A attribute x",
+            "part B unresolved_ref",
+            "part C type_error",
+        ],
+        "mode": "online_reward",
+    }
+
+    response = client.post("/validate_batch", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sample_count"] == 3
+    assert body["pass_at_k"] == 1.0
+    assert body["stable_at_k"] == 1 / 3
+    assert body["meta"]["mode"] == "online_reward"
+    assert [item["meta"]["text_hash"] for item in body["responses"]] == [
+        client.post("/validate", json={"text": text, "mode": "online_reward"}).json()["meta"]["text_hash"]
+        for text in payload["texts"]
+    ]
+
+
+def test_validate_batch_uses_single_validation_cache_path():
+    client = TestClient(app)
+    payload = {"texts": ["part A attribute x", "part A attribute x"], "mode": "online_reward"}
+
+    body = client.post("/validate_batch", json=payload).json()
+
+    assert body["responses"][0]["meta"]["cache_hit"] is False
+    assert body["responses"][1]["meta"]["cache_hit"] is True
+
+
+def test_validate_batch_rejects_empty_texts():
+    client = TestClient(app)
+
+    response = client.post("/validate_batch", json={"texts": [], "mode": "online_reward"})
+
+    assert response.status_code == 422
