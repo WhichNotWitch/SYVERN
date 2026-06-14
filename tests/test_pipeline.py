@@ -32,6 +32,24 @@ def test_full_mode_parser_disagreement_triggers_veto():
     assert response.meta.reward == 0.0
 
 
+def test_short_semantic_pass_triggers_degenerate_veto():
+    response = ValidationPipeline().validate("part A", mode="online_reward")
+
+    assert response.veto.triggered is True
+    assert response.veto.reason == "degenerate_output"
+    assert response.meta.reward == 0.0
+
+
+def test_filler_markers_trigger_anti_gaming_veto():
+    for text in ("part A todo marker", "part A tbd marker"):
+        response = ValidationPipeline().validate(text, mode="online_reward")
+
+        assert response.veto.triggered is True
+        assert response.veto.reason == "anti_gaming_rule"
+        assert response.meta.reward == 0.0
+        assert any(v.rule == "no_filler_text" for v in response.stage.constraint.violations)
+
+
 def test_h1_non_h1_fields_are_unevaluated_defaults():
     response = ValidationPipeline().validate("part A attribute x", mode="full")
     assert response.structural.evaluated is False

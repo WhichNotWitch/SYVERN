@@ -15,7 +15,7 @@ def evaluate_rules(text: str, settings: SyvernSettings) -> list[Violation]:
     normalized = normalize_ws(text).lower()
     violations: list[Violation] = []
 
-    if re.search(r"\b(filler|dummy)\b", normalized) or "???" in normalized:
+    if re.search(r"\b(todo|tbd|filler|dummy)\b", normalized) or "???" in normalized:
         violations.append(Violation(rule="no_filler_text", severity="error", category="anti_gaming"))
 
     words = normalized.split()

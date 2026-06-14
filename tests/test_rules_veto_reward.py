@@ -72,6 +72,13 @@ def test_anti_gaming_rules_are_weighted():
     assert weighted_violations(violations) >= 2
 
 
+def test_filler_marker_rules_include_h1_spec_markers():
+    settings = SyvernSettings()
+    for marker in ("todo", "tbd", "filler", "dummy", "???"):
+        violations = evaluate_rules(f"part A {marker} marker", settings)
+        assert any(v.rule == "no_filler_text" for v in violations)
+
+
 def test_repetition_rule_applies_below_min_tokens():
     violations = evaluate_rules("x x", SyvernSettings())
     rules = {v.rule for v in violations}

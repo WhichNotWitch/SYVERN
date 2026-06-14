@@ -94,8 +94,6 @@ class ValidationPipeline:
             and stage.resolve.ok
             and stage.typecheck.reached
             and stage.typecheck.ok
-            and stage.constraint.reached
-            and stage.constraint.ok
         )
         veto = evaluate_veto(
             text=text,
@@ -104,7 +102,11 @@ class ValidationPipeline:
             parser_agreement=stage.parse.parser_agreement,
             violations=stage.constraint.violations if stage.constraint.reached else [],
         )
-        tier_summary = TierSummary(t0_pass=semantic_path_passed and not veto.triggered, t1_available=False, veto=veto.triggered)
+        tier_summary = TierSummary(
+            t0_pass=semantic_path_passed and stage.constraint.ok and not veto.triggered,
+            t1_available=False,
+            veto=veto.triggered,
+        )
         latency_ms = int((time.perf_counter() - started) * 1000)
 
         response = ValidateResponse(
