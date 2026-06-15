@@ -17,7 +17,7 @@ Implemented:
 Not implemented in H1:
 
 - Real SysML Pilot or MontiCore integration
-- Stage 4 structural matching
+- Stage 4 structural matching, which was deferred to H3 scope
 - Stage 5 LLM intent judging
 - IPT, persistence, dashboards, or production monitoring
 
@@ -34,7 +34,7 @@ Implemented:
 Not implemented in H2:
 
 - Real SysML Pilot or MontiCore integration
-- Stage 4 structural matching
+- Stage 4 structural matching, which was deferred to H3 scope
 - IPT perturbation generation
 - LLM or human intent judging
 - Persistent storage, dashboards, or production monitoring
@@ -43,9 +43,9 @@ Not implemented in H2:
 
 Implemented:
 
-- Deterministic Stage 4 structural matching in `full` mode when `reference` is supplied
+- Deterministic Stage 4 structural matching in `full` mode when `reference` is supplied and T0 passes without veto
 - Frozen exact matching policy `h3-frozen-exact-v1`
-- Element-level `precision`, `recall`, `f1`, `requirement_coverage`, and `hallucinated_elements`
+- Element-level `precision`, `recall`, `f1`, and `hallucinated_elements`, plus requirement-level `requirement_coverage`
 - Reference-aware cache behavior through the existing reference identity key
 - T1 reward contribution through existing `w4` and `w5` terms after T0 passes
 
@@ -93,4 +93,4 @@ Structural matching example:
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/validate -ContentType "application/json" -Body '{"text":"part vehicle.engine attribute vehicle.mass","mode":"full","reference":{"elements":[{"type":"part","qualified_name":"vehicle.engine"},{"type":"attribute","qualified_name":"vehicle.mass"}],"requirements":["req.power","req.mass"],"coverage":{"req.power":["vehicle.engine"],"req.mass":["vehicle.mass"]}}}'
 ```
 
-The adapter and structural behavior is a deterministic harness, not a real SysML parser. Markers such as `syntax_error`, `unresolved_ref`, `type_error`, `parser_disagreement`, and `summary_disagreement` exercise the stage gates and H2 robustness checks for tests and local development. H3 structural matching uses the same lightweight element markers as H2 and the exact frozen policy.
+The adapter and structural behaviors are a deterministic harness, not a real SysML parser. Markers such as `syntax_error`, `unresolved_ref`, `type_error`, `parser_disagreement`, and `summary_disagreement` exercise the stage gates and H2 robustness checks for tests and local development. H3 structural matching uses the same lightweight element markers as H2 and the exact frozen policy.
