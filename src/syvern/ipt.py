@@ -13,7 +13,7 @@ def evaluate_ipt(
     reference: dict[str, Any] | None,
     settings: SyvernSettings,
 ) -> bool | None:
-    if not perturbations:
+    if not perturbations or reference is None:
         return None
 
     for perturbation in perturbations:

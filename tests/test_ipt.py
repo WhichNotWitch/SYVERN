@@ -46,5 +46,13 @@ def test_missing_or_empty_perturbations_are_unevaluated():
     assert evaluate_ipt(perturbations=[], reference=REFERENCE, settings=SyvernSettings()) is None
 
 
+def test_missing_reference_is_unevaluated_even_with_perturbations():
+    assert evaluate_ipt(
+        perturbations=["part vehicle.engine"],
+        reference=None,
+        settings=SyvernSettings(),
+    ) is None
+
+
 def test_blank_perturbation_is_inconsistent_when_ipt_is_eligible():
     assert evaluate_ipt(perturbations=[""], reference=REFERENCE, settings=SyvernSettings()) is False
