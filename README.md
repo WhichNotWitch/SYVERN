@@ -61,7 +61,7 @@ Not implemented in H3:
 
 Implemented:
 
-- Deterministic anti-gaming hard vetoes for parser disagreement, degenerate output, filler placeholders, excessive repetition, placeholder element names, and enumeration-style generated structures
+- Deterministic hard vetoes for parser disagreement and degenerate output, plus anti-gaming vetoes for filler placeholders, excessive repetition, placeholder element names, and enumeration-style generated structures
 - Deterministic IPT consistency in `full` mode when `reference` and caller-supplied `perturbations` are present and T0 passes without veto
 - Perturbation-aware cache behavior through a frozen perturbation identity
 - Reward `w6` compatibility for callers that enable IPT positive credit
