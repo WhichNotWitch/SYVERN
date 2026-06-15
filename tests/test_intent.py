@@ -56,6 +56,30 @@ def test_reference_with_no_evaluable_items_is_unevaluated():
     assert result.source is None
 
 
+def test_blank_text_is_unevaluated_even_with_reference():
+    settings = SyvernSettings()
+    for intent_reference in (
+        {"must_include": ["vehicle.engine"]},
+        {"must_not_include": ["aircraft.wing"]},
+    ):
+        result = evaluate_intent("   ", intent_reference, settings)
+        assert result.evaluated is False
+        assert result.score is None
+        assert result.source is None
+
+
+def test_phrase_matching_does_not_match_inside_larger_words():
+    result = evaluate_intent(
+        "part engineering.notes attribute massive.object",
+        {"must_include": ["engine", "mass"]},
+        SyvernSettings(),
+    )
+
+    assert result.evaluated is True
+    assert result.score is not None
+    assert result.score < 3.0
+
+
 def test_vote_count_must_be_positive():
     with pytest.raises(ValueError, match="intent_vote_count"):
         SyvernSettings(intent_vote_count=0)

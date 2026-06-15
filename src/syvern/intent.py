@@ -12,8 +12,8 @@ def _normalize_phrase(value: str) -> str:
     return normalize_ws(value).lower()
 
 
-def _phrase_key(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", value.lower())
+def _phrase_tokens(value: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", value.lower())
 
 
 def _string_list(intent_reference: dict[str, Any], key: str) -> list[str]:
@@ -23,22 +23,25 @@ def _string_list(intent_reference: dict[str, Any], key: str) -> list[str]:
     return [_normalize_phrase(item) for item in value if isinstance(item, str) and normalize_ws(item)]
 
 
-def _contains_phrase(text_key: str, phrase: str) -> bool:
-    key = _phrase_key(phrase)
-    return bool(key) and key in text_key
+def _contains_phrase(text_tokens: list[str], phrase: str) -> bool:
+    phrase_tokens = _phrase_tokens(phrase)
+    phrase_length = len(phrase_tokens)
+    if phrase_length == 0 or phrase_length > len(text_tokens):
+        return False
+    return any(text_tokens[index : index + phrase_length] == phrase_tokens for index in range(len(text_tokens)))
 
 
-def _coverage_score(text_key: str, required: list[str]) -> float | None:
+def _coverage_score(text_tokens: list[str], required: list[str]) -> float | None:
     if not required:
         return None
-    matched = sum(1 for phrase in required if _contains_phrase(text_key, phrase))
+    matched = sum(1 for phrase in required if _contains_phrase(text_tokens, phrase))
     return 5.0 * matched / len(required)
 
 
-def _correctness_score(text_key: str, forbidden: list[str]) -> float | None:
+def _correctness_score(text_tokens: list[str], forbidden: list[str]) -> float | None:
     if not forbidden:
         return None
-    matches = sum(1 for phrase in forbidden if _contains_phrase(text_key, phrase))
+    matches = sum(1 for phrase in forbidden if _contains_phrase(text_tokens, phrase))
     return max(0.0, 5.0 - 2.5 * matches)
 
 
@@ -72,11 +75,11 @@ def _single_vote(text: str, intent_reference: dict[str, Any]) -> float | None:
     must_include = _string_list(intent_reference, "must_include")
     must_not_include = _string_list(intent_reference, "must_not_include")
     required = requirements + must_include
-    text_key = _phrase_key(text)
+    text_tokens = _phrase_tokens(text)
 
     scores = [
-        _coverage_score(text_key, required),
-        _correctness_score(text_key, must_not_include),
+        _coverage_score(text_tokens, required),
+        _correctness_score(text_tokens, must_not_include),
         _overfit_underfit_score(text, required),
     ]
     evaluated_scores = [score for score in scores if score is not None]
@@ -87,6 +90,8 @@ def _single_vote(text: str, intent_reference: dict[str, Any]) -> float | None:
 
 def evaluate_intent(text: str, intent_reference: dict[str, Any] | None, settings: SyvernSettings) -> IntentSummary:
     if not intent_reference:
+        return IntentSummary()
+    if token_count(text) == 0:
         return IntentSummary()
 
     votes: list[float] = []
