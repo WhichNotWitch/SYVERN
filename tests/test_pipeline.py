@@ -40,6 +40,17 @@ def test_short_semantic_pass_triggers_degenerate_veto():
     assert response.meta.reward == 0.0
 
 
+def test_semantic_pass_with_too_few_elements_triggers_degenerate_veto():
+    response = ValidationPipeline().validate("comment only enough tokens", mode="online_reward")
+
+    assert response.stage.parse.ok is True
+    assert response.stage.resolve.ok is True
+    assert response.stage.typecheck.ok is True
+    assert response.veto.triggered is True
+    assert response.veto.reason == "degenerate_output"
+    assert response.meta.reward == 0.0
+
+
 def test_filler_markers_trigger_anti_gaming_veto():
     for text in ("part A todo marker", "part A tbd marker"):
         response = ValidationPipeline().validate(text, mode="online_reward")

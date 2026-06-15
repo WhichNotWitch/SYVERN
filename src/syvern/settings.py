@@ -17,11 +17,14 @@ class RewardWeights:
 
 @dataclass(frozen=True)
 class SyvernSettings:
-    validator_fingerprint: str = "syvern-h1-stub@0.1.0+rules@h1"
+    validator_fingerprint: str = "syvern-h4-stub@0.4.0+rules@h4"
     matching_policy_id: str = "h3-frozen-exact-v1"
     min_tokens: int = 3
     min_elements: int = 1
     repetition_ratio: float = 0.65
+    enum_ratio: float = 0.75
+    enum_min_group_size: int = 4
+    ipt_threshold: float = 1.0
     cap_type: int = 4
     cap_cons: int = 4
     cap_hall: int = 4

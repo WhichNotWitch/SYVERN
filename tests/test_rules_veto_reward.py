@@ -13,6 +13,7 @@ from syvern.models import (
     ValidateResponse,
     VetoSummary,
 )
+from syvern.pipeline import ValidationPipeline
 from syvern.reward import compute_reward
 from syvern.rules import evaluate_rules, weighted_violations
 from syvern.settings import RewardWeights, SyvernSettings
@@ -84,6 +85,40 @@ def test_repetition_rule_applies_below_min_tokens():
     rules = {v.rule for v in violations}
     assert "no_excessive_repetition" in rules
     assert "minimum_model_signal" in rules
+
+
+def test_placeholder_element_names_trigger_anti_gaming_rule():
+    violations = evaluate_rules("part item1 attribute placeholder", SyvernSettings())
+    assert any(v.rule == "no_placeholder_names" for v in violations)
+
+
+def test_enumeration_style_elements_trigger_anti_gaming_rule():
+    text = "part wheel1 part wheel2 part wheel3 part wheel4"
+    violations = evaluate_rules(text, SyvernSettings())
+    assert any(v.rule == "no_enumeration_gaming" for v in violations)
+
+
+def test_pipeline_vetoes_enumeration_style_output():
+    response = ValidationPipeline().validate(
+        "part wheel1 part wheel2 part wheel3 part wheel4",
+        mode="online_reward",
+    )
+
+    assert response.veto.triggered is True
+    assert response.veto.reason == "anti_gaming_rule"
+    assert response.meta.reward == 0.0
+    assert any(v.rule == "no_enumeration_gaming" for v in response.stage.constraint.violations)
+
+
+def test_minimum_element_signal_is_reported_as_anti_gaming_warning():
+    violations = evaluate_rules("comment only enough tokens", SyvernSettings())
+
+    assert any(
+        v.rule == "minimum_element_signal"
+        and v.severity == "warn"
+        and v.category == "anti_gaming"
+        for v in violations
+    )
 
 
 def test_veto_triggers_for_error_anti_gaming_rule():
