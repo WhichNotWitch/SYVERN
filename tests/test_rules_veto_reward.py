@@ -228,3 +228,13 @@ def test_reward_does_not_credit_positive_t1_terms_when_t0_fails():
 
     assert reward == expected_without_t1
     assert reward < would_include_t1
+
+
+def test_reward_credits_w6_only_when_ipt_is_consistent_and_t0_passes():
+    settings = SyvernSettings(weights=RewardWeights(w6=0.07))
+    consistent = compute_reward(_response(robustness=RobustnessSummary(ipt_consistent=True)), settings)
+    inconsistent = compute_reward(_response(robustness=RobustnessSummary(ipt_consistent=False)), settings)
+    unevaluated = compute_reward(_response(robustness=RobustnessSummary(ipt_consistent=None)), settings)
+
+    assert consistent == inconsistent + settings.weights.w6
+    assert inconsistent == unevaluated

@@ -139,6 +139,72 @@ def test_full_mode_with_reference_evaluates_structural_stage():
     assert response.meta.reward == 1.0
 
 
+def test_full_mode_with_equivalent_perturbations_sets_ipt_consistent():
+    response = ValidationPipeline().validate(
+        "part vehicle.engine attribute vehicle.mass",
+        mode="full",
+        reference=_reference(),
+        perturbations=["attribute vehicle.mass part vehicle.engine"],
+    )
+
+    assert response.structural.evaluated is True
+    assert response.robustness.ipt_consistent is True
+
+
+def test_full_mode_with_structural_perturbation_failure_sets_ipt_false():
+    response = ValidationPipeline().validate(
+        "part vehicle.engine attribute vehicle.mass",
+        mode="full",
+        reference=_reference(),
+        perturbations=["part vehicle.engine"],
+    )
+
+    assert response.structural.evaluated is True
+    assert response.robustness.ipt_consistent is False
+
+
+def test_missing_perturbations_leave_ipt_unevaluated():
+    response = ValidationPipeline().validate(
+        "part vehicle.engine attribute vehicle.mass",
+        mode="full",
+        reference=_reference(),
+    )
+
+    assert response.robustness.ipt_consistent is None
+
+
+def test_online_reward_and_data_filter_do_not_run_ipt():
+    for mode in ("online_reward", "data_filter"):
+        response = ValidationPipeline().validate(
+            "part vehicle.engine attribute vehicle.mass",
+            mode=mode,
+            reference=_reference(),
+            perturbations=["attribute vehicle.mass part vehicle.engine"],
+        )
+
+        assert response.structural.evaluated is False
+        assert response.robustness.ipt_consistent is None
+
+
+def test_t0_failure_or_veto_prevents_ipt_evaluation():
+    type_failure = ValidationPipeline().validate(
+        "part vehicle.engine attribute vehicle.mass type_error",
+        mode="full",
+        reference=_reference(),
+        perturbations=["attribute vehicle.mass part vehicle.engine"],
+    )
+    vetoed = ValidationPipeline().validate(
+        "part vehicle.engine attribute vehicle.mass summary_disagreement",
+        mode="full",
+        reference=_reference(),
+        perturbations=["attribute vehicle.mass part vehicle.engine"],
+    )
+
+    assert type_failure.robustness.ipt_consistent is None
+    assert vetoed.veto.triggered is True
+    assert vetoed.robustness.ipt_consistent is None
+
+
 def test_full_mode_without_reference_keeps_structural_unevaluated():
     response = ValidationPipeline().validate("part vehicle.engine attribute vehicle.mass", mode="full")
 

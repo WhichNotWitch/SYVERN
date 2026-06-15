@@ -21,6 +21,7 @@ from syvern.models import (
     TypecheckStage,
     ValidateResponse,
 )
+from syvern.ipt import evaluate_ipt
 from syvern.normalization import sha256_text
 from syvern.reward import compute_reward
 from syvern.robustness import aggregate_robustness
@@ -42,6 +43,7 @@ class ValidationPipeline:
         *,
         mode: Mode = "online_reward",
         reference: dict[str, Any] | None = None,
+        perturbations: list[str] | None = None,
     ) -> ValidateResponse:
         started = time.perf_counter()
 
@@ -64,7 +66,14 @@ class ValidationPipeline:
                 typecheck=TypecheckStage(reached=False, ok=False),
                 constraint=ConstraintStage(reached=False, ok=False),
             )
-            return self._finish(text=text, mode=mode, stage=stage, started=started, reference=reference)
+            return self._finish(
+                text=text,
+                mode=mode,
+                stage=stage,
+                started=started,
+                reference=reference,
+                perturbations=perturbations,
+            )
 
         resolve_result = self.pilot.resolve(text)
         resolve = ResolveStage(
@@ -81,7 +90,14 @@ class ValidationPipeline:
                 typecheck=TypecheckStage(reached=False, ok=False),
                 constraint=ConstraintStage(reached=False, ok=False),
             )
-            return self._finish(text=text, mode=mode, stage=stage, started=started, reference=reference)
+            return self._finish(
+                text=text,
+                mode=mode,
+                stage=stage,
+                started=started,
+                reference=reference,
+                perturbations=perturbations,
+            )
 
         typecheck_result = self.pilot.typecheck(text)
         typecheck = TypecheckStage(
@@ -95,7 +111,14 @@ class ValidationPipeline:
         constraint = ConstraintStage(reached=True, ok=not violations, violations=violations)
         stage = StageSummary(parse=parse, resolve=resolve, typecheck=typecheck, constraint=constraint)
 
-        return self._finish(text=text, mode=mode, stage=stage, started=started, reference=reference)
+        return self._finish(
+            text=text,
+            mode=mode,
+            stage=stage,
+            started=started,
+            reference=reference,
+            perturbations=perturbations,
+        )
 
     def validate_many(
         self,
@@ -103,10 +126,13 @@ class ValidationPipeline:
         *,
         mode: Mode = "online_reward",
         reference: dict[str, Any] | None = None,
+        perturbations: list[str] | None = None,
     ) -> BatchValidateResponse:
         if not texts:
             raise ValueError("texts must not be empty")
-        responses = [self.validate(text, mode=mode, reference=reference) for text in texts]
+        responses = [
+            self.validate(text, mode=mode, reference=reference, perturbations=perturbations) for text in texts
+        ]
         metrics = aggregate_robustness(responses)
         return BatchValidateResponse(
             sample_count=len(responses),
@@ -127,6 +153,7 @@ class ValidationPipeline:
         stage: StageSummary,
         started: float,
         reference: dict[str, Any] | None,
+        perturbations: list[str] | None,
     ) -> ValidateResponse:
         semantic_path_passed = (
             stage.parse.reached
@@ -158,6 +185,25 @@ class ValidationPipeline:
                 reference,
                 self.settings,
             )
+        robustness = RobustnessSummary()
+        ipt_evaluated = (
+            mode == "full"
+            and perturbations is not None
+            and bool(perturbations)
+            and structural.evaluated
+            and semantic_path_passed
+            and stage.constraint.reached
+            and stage.constraint.ok
+            and not veto.triggered
+        )
+        if ipt_evaluated:
+            robustness = RobustnessSummary(
+                ipt_consistent=evaluate_ipt(
+                    perturbations=perturbations,
+                    reference=reference,
+                    settings=self.settings,
+                )
+            )
         tier_summary = TierSummary(
             t0_pass=semantic_path_passed and stage.constraint.ok and not veto.triggered,
             t1_available=structural.evaluated,
@@ -170,7 +216,7 @@ class ValidationPipeline:
             tier_summary=tier_summary,
             stage=stage,
             structural=structural,
-            robustness=RobustnessSummary(),
+            robustness=robustness,
             intent=IntentSummary(),
             veto=veto,
             monitor=MonitorSummary(),

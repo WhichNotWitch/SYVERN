@@ -12,6 +12,7 @@ Severity = Literal["error", "warn"]
 class ValidateRequest(BaseModel):
     text: str
     reference: dict[str, Any] | None = None
+    perturbations: list[str] | None = None
     mode: Mode = "online_reward"
     k: int | None = Field(default=None, ge=1)
 
@@ -19,6 +20,7 @@ class ValidateRequest(BaseModel):
 class BatchValidateRequest(BaseModel):
     texts: list[str] = Field(min_length=1)
     reference: dict[str, Any] | None = None
+    perturbations: list[str] | None = None
     mode: Mode = "online_reward"
 
 
