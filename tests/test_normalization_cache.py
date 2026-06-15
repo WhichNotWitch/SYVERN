@@ -1,5 +1,5 @@
 from syvern.cache import CacheKey, InMemoryValidationCache
-from syvern.normalization import reference_identity, sha256_text, token_count
+from syvern.normalization import perturbation_identity, reference_identity, sha256_text, token_count
 from syvern.settings import SyvernSettings
 
 
@@ -17,6 +17,20 @@ def test_reference_identity_is_stable_for_nested_dicts():
     left = reference_identity({"b": 2, "a": {"x": 1}})
     right = reference_identity({"a": {"x": 1}, "b": 2})
     assert left == right
+
+
+def test_perturbation_identity_normalizes_whitespace_and_preserves_order():
+    first = perturbation_identity([" part A ", "attribute   x"])
+    second = perturbation_identity(["part A", "attribute x"])
+    reversed_items = perturbation_identity(["attribute x", "part A"])
+
+    assert first == second
+    assert first != reversed_items
+
+
+def test_perturbation_identity_treats_missing_and_empty_as_none():
+    assert perturbation_identity(None) == "none"
+    assert perturbation_identity([]) == "none"
 
 
 def test_cache_key_includes_mode_and_reference_identity():

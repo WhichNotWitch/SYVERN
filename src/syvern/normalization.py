@@ -26,3 +26,10 @@ def reference_identity(reference: Any | None) -> str:
         return "none"
     encoded = json.dumps(reference, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def perturbation_identity(perturbations: list[str] | None) -> str:
+    if not perturbations:
+        return "none"
+    normalized = [normalize_ws(item) for item in perturbations]
+    return sha256_text(json.dumps(normalized, separators=(",", ":"), ensure_ascii=True))

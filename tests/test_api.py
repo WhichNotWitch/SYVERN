@@ -88,6 +88,23 @@ def test_validate_full_with_reference_returns_structural_scores():
     assert body["tier_summary"]["t1_available"] is True
 
 
+def test_validate_full_with_perturbations_returns_ipt_consistency():
+    client = TestClient(app)
+    payload = {
+        "text": "part vehicle.engine attribute vehicle.mass",
+        "mode": "full",
+        "reference": _reference(),
+        "perturbations": ["attribute vehicle.mass part vehicle.engine"],
+    }
+
+    response = client.post("/validate", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["structural"]["evaluated"] is True
+    assert body["robustness"]["ipt_consistent"] is True
+
+
 def test_cache_key_distinguishes_reference_for_structural_scores():
     client = TestClient(app)
     payload = {
@@ -108,6 +125,30 @@ def test_cache_key_distinguishes_reference_for_structural_scores():
     assert second["meta"]["cache_hit"] is True
     assert third["meta"]["cache_hit"] is False
     assert third["structural"]["f1"] < 1.0
+
+
+def test_cache_key_distinguishes_perturbations_for_ipt_results():
+    client = TestClient(app)
+    payload = {
+        "text": "part vehicle.engine attribute vehicle.mass",
+        "mode": "full",
+        "reference": _reference(),
+        "perturbations": ["attribute vehicle.mass part vehicle.engine"],
+    }
+    different_perturbation = {
+        **payload,
+        "perturbations": ["part vehicle.engine"],
+    }
+
+    first = client.post("/validate", json=payload).json()
+    second = client.post("/validate", json=payload).json()
+    third = client.post("/validate", json=different_perturbation).json()
+
+    assert first["meta"]["cache_hit"] is False
+    assert second["meta"]["cache_hit"] is True
+    assert third["meta"]["cache_hit"] is False
+    assert first["robustness"]["ipt_consistent"] is True
+    assert third["robustness"]["ipt_consistent"] is False
 
 
 def test_validate_batch_returns_robustness_metrics_and_ordered_responses():
@@ -157,6 +198,23 @@ def test_validate_batch_forwards_reference_to_each_response():
 
     assert body["responses"][0]["structural"]["evaluated"] is True
     assert body["responses"][0]["structural"]["f1"] == 1.0
+
+
+def test_validate_batch_forwards_perturbations_to_each_response():
+    client = TestClient(app)
+    response = client.post(
+        "/validate_batch",
+        json={
+            "texts": ["part vehicle.engine attribute vehicle.mass"],
+            "mode": "full",
+            "reference": _reference(),
+            "perturbations": ["attribute vehicle.mass part vehicle.engine"],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["responses"][0]["robustness"]["ipt_consistent"] is True
 
 
 def test_validate_batch_rejects_empty_texts():

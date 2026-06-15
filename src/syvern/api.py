@@ -13,7 +13,7 @@ from syvern.models import (
     ValidateRequest,
     ValidateResponse,
 )
-from syvern.normalization import reference_identity, sha256_text
+from syvern.normalization import perturbation_identity, reference_identity, sha256_text
 from syvern.pipeline import ValidationPipeline
 from syvern.robustness import aggregate_robustness
 from syvern.settings import SyvernSettings
@@ -25,13 +25,20 @@ validation_cache = InMemoryValidationCache()
 app = FastAPI(title="SYVERN", version="0.1.0")
 
 
-def _validate_with_cache(text: str, *, mode: Mode, reference: dict | None) -> ValidateResponse:
+def _validate_with_cache(
+    text: str,
+    *,
+    mode: Mode,
+    reference: dict | None,
+    perturbations: list[str] | None,
+) -> ValidateResponse:
     text_hash = sha256_text(text)
     key = CacheKey(
         text_hash=text_hash,
         validator_fingerprint=settings.validator_fingerprint,
         mode=mode,
         reference_id=reference_identity(reference),
+        perturbation_id=perturbation_identity(perturbations),
     )
     cached = validation_cache.get(key)
     if cached is not None:
@@ -39,7 +46,7 @@ def _validate_with_cache(text: str, *, mode: Mode, reference: dict | None) -> Va
         cached_payload["meta"]["cache_hit"] = True
         return ValidateResponse.model_validate(cached_payload)
 
-    response = pipeline.validate(text, mode=mode, reference=reference)
+    response = pipeline.validate(text, mode=mode, reference=reference, perturbations=perturbations)
     payload = response.model_dump(mode="json")
     payload["meta"]["cache_hit"] = False
     validation_cache.set(key, payload)
@@ -53,13 +60,23 @@ def health() -> dict[str, str]:
 
 @app.post("/validate", response_model=ValidateResponse)
 def validate(request: ValidateRequest) -> ValidateResponse:
-    return _validate_with_cache(request.text, mode=request.mode, reference=request.reference)
+    return _validate_with_cache(
+        request.text,
+        mode=request.mode,
+        reference=request.reference,
+        perturbations=request.perturbations,
+    )
 
 
 @app.post("/validate_batch", response_model=BatchValidateResponse)
 def validate_batch(request: BatchValidateRequest) -> BatchValidateResponse:
     responses = [
-        _validate_with_cache(text, mode=request.mode, reference=request.reference)
+        _validate_with_cache(
+            text,
+            mode=request.mode,
+            reference=request.reference,
+            perturbations=request.perturbations,
+        )
         for text in request.texts
     ]
     metrics = aggregate_robustness(responses)

@@ -11,6 +11,7 @@ class CacheKey:
     validator_fingerprint: str
     mode: str
     reference_id: str
+    perturbation_id: str = "none"
 
 
 class InMemoryValidationCache:
