@@ -1,4 +1,5 @@
 from syvern.cache import CacheKey, InMemoryValidationCache
+from syvern.normalization import intent_reference_identity
 from syvern.normalization import perturbation_identity, reference_identity, sha256_text, token_count
 from syvern.settings import SyvernSettings
 
@@ -64,3 +65,32 @@ def test_cache_get_isolates_nested_validation_payloads():
     cached["meta"]["cache_hit"] = True
 
     assert cache.get(key)["meta"]["cache_hit"] is False
+
+
+def test_intent_reference_identity_normalizes_nested_string_whitespace():
+    left = intent_reference_identity(
+        {
+            "must_include": [" vehicle.engine ", "vehicle.  mass"],
+            "requirements": ["model   engine"],
+        }
+    )
+    right = intent_reference_identity(
+        {
+            "requirements": ["model engine"],
+            "must_include": ["vehicle.engine", "vehicle. mass"],
+        }
+    )
+
+    assert left == right
+
+
+def test_intent_reference_identity_treats_missing_and_empty_as_none():
+    assert intent_reference_identity(None) == "none"
+    assert intent_reference_identity({}) == "none"
+
+
+def test_cache_key_includes_intent_reference_identity():
+    base = CacheKey("abc", "fingerprint", "full", "ref", "pert", "intent-a")
+    changed_intent = CacheKey("abc", "fingerprint", "full", "ref", "pert", "intent-b")
+
+    assert base != changed_intent

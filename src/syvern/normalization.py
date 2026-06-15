@@ -28,6 +28,24 @@ def reference_identity(reference: Any | None) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def _normalize_json_strings(value: Any) -> Any:
+    if isinstance(value, str):
+        return normalize_ws(value)
+    if isinstance(value, list):
+        return [_normalize_json_strings(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _normalize_json_strings(item) for key, item in value.items()}
+    return value
+
+
+def intent_reference_identity(intent_reference: Any | None) -> str:
+    if not intent_reference:
+        return "none"
+    normalized = _normalize_json_strings(intent_reference)
+    encoded = json.dumps(normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def perturbation_identity(perturbations: list[str] | None) -> str:
     if not perturbations:
         return "none"

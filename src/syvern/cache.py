@@ -12,6 +12,7 @@ class CacheKey:
     mode: str
     reference_id: str
     perturbation_id: str = "none"
+    intent_reference_id: str = "none"
 
 
 class InMemoryValidationCache:
