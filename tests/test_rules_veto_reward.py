@@ -146,6 +146,14 @@ def test_intent_score_does_not_affect_reward():
     assert low == high
 
 
+def test_reward_ignores_evaluated_intent_source_and_score():
+    settings = SyvernSettings()
+    low = compute_reward(_response(intent_score=0.0), settings)
+    high = compute_reward(_response(intent_score=5.0), settings)
+
+    assert low == high
+
+
 def test_reward_does_not_credit_downstream_when_parse_fails():
     settings = SyvernSettings()
     stage = StageSummary(

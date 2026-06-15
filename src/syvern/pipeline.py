@@ -22,6 +22,7 @@ from syvern.models import (
     ValidateResponse,
 )
 from syvern.ipt import evaluate_ipt
+from syvern.intent import evaluate_intent
 from syvern.normalization import sha256_text
 from syvern.reward import compute_reward
 from syvern.robustness import aggregate_robustness
@@ -44,6 +45,7 @@ class ValidationPipeline:
         mode: Mode = "online_reward",
         reference: dict[str, Any] | None = None,
         perturbations: list[str] | None = None,
+        intent_reference: dict[str, Any] | None = None,
     ) -> ValidateResponse:
         started = time.perf_counter()
 
@@ -73,6 +75,7 @@ class ValidationPipeline:
                 started=started,
                 reference=reference,
                 perturbations=perturbations,
+                intent_reference=intent_reference,
             )
 
         resolve_result = self.pilot.resolve(text)
@@ -97,6 +100,7 @@ class ValidationPipeline:
                 started=started,
                 reference=reference,
                 perturbations=perturbations,
+                intent_reference=intent_reference,
             )
 
         typecheck_result = self.pilot.typecheck(text)
@@ -118,6 +122,7 @@ class ValidationPipeline:
             started=started,
             reference=reference,
             perturbations=perturbations,
+            intent_reference=intent_reference,
         )
 
     def validate_many(
@@ -127,11 +132,19 @@ class ValidationPipeline:
         mode: Mode = "online_reward",
         reference: dict[str, Any] | None = None,
         perturbations: list[str] | None = None,
+        intent_reference: dict[str, Any] | None = None,
     ) -> BatchValidateResponse:
         if not texts:
             raise ValueError("texts must not be empty")
         responses = [
-            self.validate(text, mode=mode, reference=reference, perturbations=perturbations) for text in texts
+            self.validate(
+                text,
+                mode=mode,
+                reference=reference,
+                perturbations=perturbations,
+                intent_reference=intent_reference,
+            )
+            for text in texts
         ]
         metrics = aggregate_robustness(responses)
         return BatchValidateResponse(
@@ -154,6 +167,7 @@ class ValidationPipeline:
         started: float,
         reference: dict[str, Any] | None,
         perturbations: list[str] | None,
+        intent_reference: dict[str, Any] | None,
     ) -> ValidateResponse:
         semantic_path_passed = (
             stage.parse.reached
@@ -204,6 +218,18 @@ class ValidationPipeline:
                     settings=self.settings,
                 )
             )
+        intent = IntentSummary()
+        intent_evaluated = (
+            mode == "full"
+            and intent_reference is not None
+            and bool(intent_reference)
+            and semantic_path_passed
+            and stage.constraint.reached
+            and stage.constraint.ok
+            and not veto.triggered
+        )
+        if intent_evaluated:
+            intent = evaluate_intent(text, intent_reference, self.settings)
         tier_summary = TierSummary(
             t0_pass=semantic_path_passed and stage.constraint.ok and not veto.triggered,
             t1_available=structural.evaluated,
@@ -217,7 +243,7 @@ class ValidationPipeline:
             stage=stage,
             structural=structural,
             robustness=robustness,
-            intent=IntentSummary(),
+            intent=intent,
             veto=veto,
             monitor=MonitorSummary(),
             meta=MetaSummary(

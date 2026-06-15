@@ -251,3 +251,60 @@ def test_validate_many_forwards_reference_to_each_full_response():
 
     assert result.responses[0].structural.evaluated is True
     assert result.responses[0].structural.f1 == 1.0
+
+
+def _intent_reference():
+    return {
+        "requirements": ["model engine", "include mass"],
+        "must_include": ["vehicle.engine", "vehicle.mass"],
+        "must_not_include": ["aircraft.wing"],
+    }
+
+
+def test_full_mode_with_intent_reference_evaluates_intent_without_structural_reference():
+    response = ValidationPipeline().validate(
+        "part vehicle.engine attribute vehicle.mass",
+        mode="full",
+        intent_reference=_intent_reference(),
+    )
+
+    assert response.intent.evaluated is True
+    assert response.intent.source == "llm_judge"
+    assert response.intent.score is not None
+    assert response.intent.score > 3.0
+    assert response.structural.evaluated is False
+
+
+def test_online_reward_and_data_filter_do_not_evaluate_intent():
+    for mode in ("online_reward", "data_filter"):
+        response = ValidationPipeline().validate(
+            "part vehicle.engine attribute vehicle.mass",
+            mode=mode,
+            intent_reference=_intent_reference(),
+        )
+
+        assert response.intent.evaluated is False
+        assert response.intent.score is None
+        assert response.intent.source is None
+
+
+def test_t0_failure_prevents_intent_evaluation():
+    response = ValidationPipeline().validate(
+        "syntax_error",
+        mode="full",
+        intent_reference=_intent_reference(),
+    )
+
+    assert response.intent.evaluated is False
+    assert response.intent.score is None
+
+
+def test_veto_prevents_intent_evaluation():
+    response = ValidationPipeline().validate(
+        "dummy dummy dummy dummy",
+        mode="full",
+        intent_reference=_intent_reference(),
+    )
+
+    assert response.veto.triggered is True
+    assert response.intent.evaluated is False
