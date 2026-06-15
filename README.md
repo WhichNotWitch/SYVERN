@@ -1,6 +1,6 @@
 # SYVERN
 
-SYVERN is the SysML V2 Evaluation and Reward Engine. This repository currently implements the H1 T0 core, H2 deterministic robustness slice, and H3 deterministic structural matching slice from the design docs: a validation and reward service with `/validate`, `/validate_batch`, Stage 0-4 pipeline, cross-parser element-summary agreement in `full` mode, batch `pass@k` / `stable@k` metrics, reference-based structural `precision` / `recall` / `f1` / `requirement_coverage`, cache/fingerprint behavior, L1 rules, veto checks, and reward mapping.
+SYVERN is the SysML V2 Evaluation and Reward Engine. This repository currently implements the H1 T0 core, H2 deterministic robustness slice, H3 deterministic structural matching slice, and H4 deterministic anti-gaming/IPT slice from the design docs: a validation and reward service with `/validate`, `/validate_batch`, Stage 0-4 pipeline, cross-parser element-summary agreement in `full` mode, batch `pass@k` / `stable@k` metrics, reference-based structural `precision` / `recall` / `f1` / `requirement_coverage`, anti-gaming vetoes, caller-supplied IPT consistency, cache/fingerprint behavior, L1 rules, veto checks, and reward mapping.
 
 ## H1 Scope
 
@@ -57,6 +57,23 @@ Not implemented in H3:
 - Stage 5 intent judging
 - Persistence, dashboards, or monitoring scatter plots
 
+## H4 Scope
+
+Implemented:
+
+- Deterministic anti-gaming hard vetoes for parser disagreement, degenerate output, filler placeholders, excessive repetition, placeholder element names, and enumeration-style generated structures
+- Deterministic IPT consistency in `full` mode when `reference` and caller-supplied `perturbations` are present and T0 passes without veto
+- Perturbation-aware cache behavior through a frozen perturbation identity
+- Reward `w6` compatibility for callers that enable IPT positive credit
+
+Not implemented in H4:
+
+- LLM-generated perturbations
+- Human equivalence verification
+- Real SysML semantic equivalence checking
+- Stage 5 intent judging
+- Persistence, dashboards, or production monitoring scatter plots
+
 ## Install
 
 ```powershell
@@ -93,4 +110,10 @@ Structural matching example:
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/validate -ContentType "application/json" -Body '{"text":"part vehicle.engine attribute vehicle.mass","mode":"full","reference":{"elements":[{"type":"part","qualified_name":"vehicle.engine"},{"type":"attribute","qualified_name":"vehicle.mass"}],"requirements":["req.power","req.mass"],"coverage":{"req.power":["vehicle.engine"],"req.mass":["vehicle.mass"]}}}'
 ```
 
-The adapter and structural behaviors are a deterministic harness, not a real SysML parser. Markers such as `syntax_error`, `unresolved_ref`, `type_error`, `parser_disagreement`, and `summary_disagreement` exercise the stage gates and H2 robustness checks for tests and local development. H3 structural matching uses the same lightweight element markers as H2 and the exact frozen policy.
+IPT example:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/validate -ContentType "application/json" -Body '{"text":"part vehicle.engine attribute vehicle.mass","mode":"full","reference":{"elements":[{"type":"part","qualified_name":"vehicle.engine"},{"type":"attribute","qualified_name":"vehicle.mass"}],"requirements":["req.power","req.mass"],"coverage":{"req.power":["vehicle.engine"],"req.mass":["vehicle.mass"]}},"perturbations":["attribute vehicle.mass part vehicle.engine"]}'
+```
+
+The adapter, structural, and IPT behaviors are a deterministic harness, not a real SysML parser or equivalence prover. Markers such as `syntax_error`, `unresolved_ref`, `type_error`, `parser_disagreement`, and `summary_disagreement` exercise the stage gates and H2 robustness checks for tests and local development. H3 structural matching and H4 IPT use the same lightweight element markers and exact frozen policy.
