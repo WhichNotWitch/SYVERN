@@ -39,7 +39,7 @@ def _validate_with_cache(text: str, *, mode: Mode, reference: dict | None) -> Va
         cached_payload["meta"]["cache_hit"] = True
         return ValidateResponse.model_validate(cached_payload)
 
-    response = pipeline.validate(text, mode=mode)
+    response = pipeline.validate(text, mode=mode, reference=reference)
     payload = response.model_dump(mode="json")
     payload["meta"]["cache_hit"] = False
     validation_cache.set(key, payload)
