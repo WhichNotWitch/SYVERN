@@ -1,6 +1,6 @@
 # SYVERN
 
-SYVERN is the SysML V2 Evaluation and Reward Engine. This repository currently implements the H1 T0 core, H2 deterministic robustness slice, H3 deterministic structural matching slice, and H4 deterministic anti-gaming/IPT slice from the design docs: a validation and reward service with `/validate`, `/validate_batch`, Stage 0-4 pipeline, cross-parser element-summary agreement in `full` mode, batch `pass@k` / `stable@k` metrics, reference-based structural `precision` / `recall` / `f1` / `requirement_coverage`, anti-gaming vetoes, caller-supplied IPT consistency, cache/fingerprint behavior, L1 rules, veto checks, and reward mapping.
+SYVERN is the SysML V2 Evaluation and Reward Engine. This repository currently implements the H1 T0 core, H2 deterministic robustness slice, H3 deterministic structural matching slice, H4 deterministic anti-gaming/IPT slice, and H5 deterministic intent-judging/calibration harness from the design docs: a validation and reward service with `/validate`, `/validate_batch`, Stage 0-5 pipeline, cross-parser element-summary agreement in `full` mode, batch `pass@k` / `stable@k` metrics, reference-based structural `precision` / `recall` / `f1` / `requirement_coverage`, anti-gaming vetoes, caller-supplied IPT consistency, deterministic intent judging, Cohen's kappa calibration helpers, cache/fingerprint behavior, L1 rules, veto checks, and reward mapping.
 
 ## H1 Scope
 
@@ -74,6 +74,28 @@ Not implemented in H4:
 - Stage 5 intent judging
 - Persistence, dashboards, or production monitoring scatter plots
 
+## H5 Scope
+
+Implemented:
+
+- Deterministic Stage 5 intent-judging harness in `full` mode when `intent_reference` is supplied and T0 passes without veto
+- Optional `intent_reference` request field, separate from the structural `reference`
+- Fixed local rubric for coverage, correctness, and overfit/underfit scoring
+- `intent.score` population with `source="llm_judge"` for schema compatibility
+- Cohen's kappa calibration helpers for human/judge agreement checks
+- Intent-reference-aware cache behavior
+- Tests proving `intent.score` does not affect deterministic reward
+
+Not implemented in H5:
+
+- Real external LLM judge calls
+- Agentic multi-step judging
+- Pairwise preference endpoints
+- Human review UI or persistent calibration storage
+- Cross-model judge ensembles
+- Automatic rubric rewriting when kappa is low
+- Running Stage 5 in `online_reward` or `data_filter`
+
 ## Install
 
 ```powershell
@@ -115,5 +137,13 @@ IPT example:
 ```powershell
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/validate -ContentType "application/json" -Body '{"text":"part vehicle.engine attribute vehicle.mass","mode":"full","reference":{"elements":[{"type":"part","qualified_name":"vehicle.engine"},{"type":"attribute","qualified_name":"vehicle.mass"}],"requirements":["req.power","req.mass"],"coverage":{"req.power":["vehicle.engine"],"req.mass":["vehicle.mass"]}},"perturbations":["attribute vehicle.mass part vehicle.engine"]}'
 ```
+
+Intent judging example:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/validate -ContentType "application/json" -Body '{"text":"part vehicle.engine attribute vehicle.mass","mode":"full","intent_reference":{"requirements":["model engine","include mass"],"must_include":["vehicle.engine","vehicle.mass"],"must_not_include":["aircraft.wing"]}}'
+```
+
+The H5 intent judge is a deterministic local harness, not a real LLM call. It preserves the Stage 5 schema and calibration boundary so future LLM judge adapters can be added without changing the deterministic reward path. `intent.score` is for monitoring and preference workflows only; it is not used by `reward.py`.
 
 The adapter, structural, and IPT behaviors are a deterministic harness, not a real SysML parser or equivalence prover. Markers such as `syntax_error`, `unresolved_ref`, `type_error`, `parser_disagreement`, and `summary_disagreement` exercise the stage gates and H2 robustness checks for tests and local development. H3 structural matching and H4 IPT use the same lightweight element markers and exact frozen policy.
