@@ -10,9 +10,12 @@ from syvern.models import (
     BatchValidateRequest,
     BatchValidateResponse,
     Mode,
+    MonitorAggregateSummary,
+    RewardConfigSummary,
     ValidateRequest,
     ValidateResponse,
 )
+from syvern.monitoring import aggregate_monitor_summary
 from syvern.normalization import (
     intent_reference_identity,
     perturbation_identity,
@@ -20,13 +23,16 @@ from syvern.normalization import (
     sha256_text,
 )
 from syvern.pipeline import ValidationPipeline
+from syvern.records import InMemoryValidationRecordStore, make_validation_record
 from syvern.robustness import aggregate_robustness
+from syvern.reward_ops import reward_config_summary
 from syvern.settings import SyvernSettings
 
 
 settings = SyvernSettings()
 pipeline = ValidationPipeline(settings=settings)
 validation_cache = InMemoryValidationCache()
+validation_records = InMemoryValidationRecordStore()
 app = FastAPI(title="SYVERN", version="0.1.0")
 
 
@@ -37,6 +43,7 @@ def _validate_with_cache(
     reference: dict | None,
     perturbations: list[str] | None,
     intent_reference: dict | None,
+    metadata: dict[str, str] | None,
 ) -> ValidateResponse:
     text_hash = sha256_text(text)
     key = CacheKey(
@@ -51,7 +58,9 @@ def _validate_with_cache(
     if cached is not None:
         cached_payload = deepcopy(cached)
         cached_payload["meta"]["cache_hit"] = True
-        return ValidateResponse.model_validate(cached_payload)
+        response = ValidateResponse.model_validate(cached_payload)
+        validation_records.add(make_validation_record(response, metadata=metadata))
+        return response
 
     response = pipeline.validate(
         text,
@@ -63,7 +72,9 @@ def _validate_with_cache(
     payload = response.model_dump(mode="json")
     payload["meta"]["cache_hit"] = False
     validation_cache.set(key, payload)
-    return ValidateResponse.model_validate(payload)
+    response = ValidateResponse.model_validate(payload)
+    validation_records.add(make_validation_record(response, metadata=metadata))
+    return response
 
 
 @app.get("/health")
@@ -79,6 +90,7 @@ def validate(request: ValidateRequest) -> ValidateResponse:
         reference=request.reference,
         perturbations=request.perturbations,
         intent_reference=request.intent_reference,
+        metadata=request.metadata,
     )
 
 
@@ -91,6 +103,7 @@ def validate_batch(request: BatchValidateRequest) -> BatchValidateResponse:
             reference=request.reference,
             perturbations=request.perturbations,
             intent_reference=request.intent_reference,
+            metadata=request.metadata,
         )
         for text in request.texts
     ]
@@ -105,3 +118,13 @@ def validate_batch(request: BatchValidateRequest) -> BatchValidateResponse:
             validator_fingerprint=settings.validator_fingerprint,
         ),
     )
+
+
+@app.get("/reward_config", response_model=RewardConfigSummary)
+def reward_config() -> RewardConfigSummary:
+    return reward_config_summary(settings)
+
+
+@app.get("/monitor_summary", response_model=MonitorAggregateSummary)
+def monitor_summary() -> MonitorAggregateSummary:
+    return aggregate_monitor_summary(validation_records.list())
