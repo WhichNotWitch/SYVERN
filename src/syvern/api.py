@@ -13,7 +13,12 @@ from syvern.models import (
     ValidateRequest,
     ValidateResponse,
 )
-from syvern.normalization import perturbation_identity, reference_identity, sha256_text
+from syvern.normalization import (
+    intent_reference_identity,
+    perturbation_identity,
+    reference_identity,
+    sha256_text,
+)
 from syvern.pipeline import ValidationPipeline
 from syvern.robustness import aggregate_robustness
 from syvern.settings import SyvernSettings
@@ -31,6 +36,7 @@ def _validate_with_cache(
     mode: Mode,
     reference: dict | None,
     perturbations: list[str] | None,
+    intent_reference: dict | None,
 ) -> ValidateResponse:
     text_hash = sha256_text(text)
     key = CacheKey(
@@ -39,6 +45,7 @@ def _validate_with_cache(
         mode=mode,
         reference_id=reference_identity(reference),
         perturbation_id=perturbation_identity(perturbations),
+        intent_reference_id=intent_reference_identity(intent_reference),
     )
     cached = validation_cache.get(key)
     if cached is not None:
@@ -46,7 +53,13 @@ def _validate_with_cache(
         cached_payload["meta"]["cache_hit"] = True
         return ValidateResponse.model_validate(cached_payload)
 
-    response = pipeline.validate(text, mode=mode, reference=reference, perturbations=perturbations)
+    response = pipeline.validate(
+        text,
+        mode=mode,
+        reference=reference,
+        perturbations=perturbations,
+        intent_reference=intent_reference,
+    )
     payload = response.model_dump(mode="json")
     payload["meta"]["cache_hit"] = False
     validation_cache.set(key, payload)
@@ -65,6 +78,7 @@ def validate(request: ValidateRequest) -> ValidateResponse:
         mode=request.mode,
         reference=request.reference,
         perturbations=request.perturbations,
+        intent_reference=request.intent_reference,
     )
 
 
@@ -76,6 +90,7 @@ def validate_batch(request: BatchValidateRequest) -> BatchValidateResponse:
             mode=request.mode,
             reference=request.reference,
             perturbations=request.perturbations,
+            intent_reference=request.intent_reference,
         )
         for text in request.texts
     ]

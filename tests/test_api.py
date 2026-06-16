@@ -223,3 +223,69 @@ def test_validate_batch_rejects_empty_texts():
     response = client.post("/validate_batch", json={"texts": [], "mode": "online_reward"})
 
     assert response.status_code == 422
+
+
+def _intent_reference():
+    return {
+        "requirements": ["model engine", "include mass"],
+        "must_include": ["vehicle.engine", "vehicle.mass"],
+        "must_not_include": ["aircraft.wing"],
+    }
+
+
+def test_validate_full_forwards_intent_reference():
+    client = TestClient(app)
+    payload = {
+        "text": "part vehicle.engine attribute vehicle.mass",
+        "mode": "full",
+        "intent_reference": _intent_reference(),
+    }
+
+    response = client.post("/validate", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"]["evaluated"] is True
+    assert body["intent"]["source"] == "llm_judge"
+    assert body["intent"]["score"] > 3.0
+
+
+def test_validate_batch_forwards_intent_reference_to_each_response():
+    client = TestClient(app)
+    payload = {
+        "texts": ["part vehicle.engine attribute vehicle.mass"],
+        "mode": "full",
+        "intent_reference": _intent_reference(),
+    }
+
+    response = client.post("/validate_batch", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["responses"][0]["intent"]["evaluated"] is True
+    assert body["responses"][0]["intent"]["score"] > 3.0
+
+
+def test_cache_key_distinguishes_intent_reference_for_intent_results():
+    client = TestClient(app)
+    payload = {
+        "text": "part vehicle.engine attribute vehicle.mass",
+        "mode": "full",
+        "intent_reference": _intent_reference(),
+    }
+    changed_intent = {
+        **payload,
+        "intent_reference": {
+            "must_include": ["aircraft.engine"],
+            "must_not_include": ["vehicle.mass"],
+        },
+    }
+
+    first = client.post("/validate", json=payload).json()
+    second = client.post("/validate", json=payload).json()
+    third = client.post("/validate", json=changed_intent).json()
+
+    assert first["meta"]["cache_hit"] is False
+    assert second["meta"]["cache_hit"] is True
+    assert third["meta"]["cache_hit"] is False
+    assert third["intent"]["score"] < first["intent"]["score"]
