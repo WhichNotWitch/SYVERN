@@ -1,3 +1,5 @@
+from typing import Literal
+
 from syvern.adapters.stub import MontiCoreStubAdapter, PilotStubAdapter
 from syvern.models import (
     ConstraintStage,
@@ -22,6 +24,8 @@ from syvern.veto import evaluate_veto
 
 def _response(
     intent_score: float | None = None,
+    intent_source: Literal["llm_judge", "human"] | None = None,
+    intent_evaluated: bool | None = None,
     veto: bool = False,
     stage: StageSummary | None = None,
     structural: StructuralSummary | None = None,
@@ -40,7 +44,11 @@ def _response(
         stage=stage,
         structural=structural or StructuralSummary(matching_policy_id=settings.matching_policy_id),
         robustness=robustness or RobustnessSummary(),
-        intent=IntentSummary(evaluated=intent_score is not None, score=intent_score, source=None),
+        intent=IntentSummary(
+            evaluated=(intent_score is not None) if intent_evaluated is None else intent_evaluated,
+            score=intent_score,
+            source=intent_source,
+        ),
         veto=VetoSummary(triggered=veto, reason="forced" if veto else None),
         monitor=MonitorSummary(),
         meta={
@@ -148,10 +156,20 @@ def test_intent_score_does_not_affect_reward():
 
 def test_reward_ignores_evaluated_intent_source_and_score():
     settings = SyvernSettings()
-    low = compute_reward(_response(intent_score=0.0), settings)
-    high = compute_reward(_response(intent_score=5.0), settings)
+    unevaluated = compute_reward(
+        _response(intent_score=None, intent_source=None, intent_evaluated=False),
+        settings,
+    )
+    llm_high = compute_reward(
+        _response(intent_score=5.0, intent_source="llm_judge", intent_evaluated=True),
+        settings,
+    )
+    human_low = compute_reward(
+        _response(intent_score=0.0, intent_source="human", intent_evaluated=True),
+        settings,
+    )
 
-    assert low == high
+    assert unevaluated == llm_high == human_low
 
 
 def test_reward_does_not_credit_downstream_when_parse_fails():
