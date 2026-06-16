@@ -14,6 +14,7 @@ class ValidateRequest(BaseModel):
     reference: dict[str, Any] | None = None
     perturbations: list[str] | None = None
     intent_reference: dict[str, Any] | None = None
+    metadata: dict[str, str] | None = None
     mode: Mode = "online_reward"
     k: int | None = Field(default=None, ge=1)
 
@@ -23,6 +24,7 @@ class BatchValidateRequest(BaseModel):
     reference: dict[str, Any] | None = None
     perturbations: list[str] | None = None
     intent_reference: dict[str, Any] | None = None
+    metadata: dict[str, str] | None = None
     mode: Mode = "online_reward"
 
 
@@ -127,6 +129,36 @@ class VetoSummary(BaseModel):
 class MonitorSummary(BaseModel):
     codebleu: float | None = None
     levenshtein: int | None = None
+
+
+class DivergenceAlert(BaseModel):
+    code: str
+    message: str
+    severity: Severity
+
+
+class RewardConfigSummary(BaseModel):
+    validator_fingerprint: str
+    weights: dict[str, float]
+    caps: dict[str, int]
+    r_max: float
+    matching_policy_id: str
+    judge_model: str
+    rubric_version: str
+    ipt_threshold: float
+
+
+class MonitorAggregateSummary(BaseModel):
+    record_count: int = Field(ge=0)
+    semantic_pass_rate: float = Field(ge=0.0, le=1.0)
+    t0_pass_rate: float = Field(ge=0.0, le=1.0)
+    t1_available_rate: float = Field(ge=0.0, le=1.0)
+    veto_rate: float = Field(ge=0.0, le=1.0)
+    average_requirement_coverage: float = Field(ge=0.0, le=1.0)
+    average_reward: float
+    average_latency_ms: float = Field(ge=0.0)
+    stable_at_k: float = Field(ge=0.0, le=1.0)
+    divergence_alerts: list[DivergenceAlert] = Field(default_factory=list)
 
 
 class MetaSummary(BaseModel):

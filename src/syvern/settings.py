@@ -17,7 +17,7 @@ class RewardWeights:
 
 @dataclass(frozen=True)
 class SyvernSettings:
-    validator_fingerprint: str = "syvern-h5-stub@0.5.0+rules@h4+judge@h5"
+    validator_fingerprint: str = "syvern-h6-stub@0.6.0+rules@h4+judge@h5+ops@h6"
     matching_policy_id: str = "h3-frozen-exact-v1"
     judge_model: str = "h5-deterministic-judge"
     rubric_version: str = "h5-rubric-v1"
@@ -33,6 +33,10 @@ class SyvernSettings:
     cap_cons: int = 4
     cap_hall: int = 4
     r_max: float = 1.0
+    monitor_semantic_gain_threshold: float = 0.20
+    monitor_coverage_stall_threshold: float = 0.05
+    monitor_veto_rate_increase_threshold: float = 0.20
+    monitor_stable_drop_threshold: float = 0.20
     weights: RewardWeights = RewardWeights()
 
     def __post_init__(self) -> None:
