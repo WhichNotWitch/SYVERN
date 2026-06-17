@@ -1,6 +1,6 @@
 # SYVERN
 
-SYVERN is the SysML V2 Evaluation and Reward Engine. This repository currently implements the H1 T0 core, H2 deterministic robustness slice, H3 deterministic structural matching slice, H4 deterministic anti-gaming/IPT slice, and H5 deterministic intent-judging/calibration harness from the design docs: a validation and reward service with `/validate`, `/validate_batch`, Stage 0-5 pipeline, cross-parser element-summary agreement in `full` mode, batch `pass@k` / `stable@k` metrics, reference-based structural `precision` / `recall` / `f1` / `requirement_coverage`, anti-gaming vetoes, caller-supplied IPT consistency, deterministic intent judging, Cohen's kappa calibration helpers, cache/fingerprint behavior, L1 rules, veto checks, and reward mapping.
+SYVERN is the SysML V2 Evaluation and Reward Engine. This repository currently implements the H1 T0 core, H2 deterministic robustness slice, H3 deterministic structural matching slice, H4 deterministic anti-gaming/IPT slice, H5 deterministic intent-judging/calibration harness, and H6 deterministic reward-readiness/monitoring harness from the design docs: a validation and reward service with `/validate`, `/validate_batch`, `/reward_config`, `/monitor_summary`, Stage 0-5 pipeline, cross-parser element-summary agreement in `full` mode, batch `pass@k` / `stable@k` metrics, reference-based structural `precision` / `recall` / `f1` / `requirement_coverage`, anti-gaming vetoes, caller-supplied IPT consistency, deterministic intent judging, Cohen's kappa calibration helpers, cache/fingerprint behavior, in-memory validation event recording, monitor summaries, reward configuration visibility, L1 rules, veto checks, and reward mapping.
 
 ## H1 Scope
 
@@ -96,6 +96,26 @@ Not implemented in H5:
 - Automatic rubric rewriting when kappa is low
 - Running Stage 5 in `online_reward` or `data_filter`
 
+## H6 Scope
+
+Implemented:
+
+- In-memory validation event recording for `/validate` and `/validate_batch`
+- Optional string metadata on validation requests, recorded for monitoring but excluded from cache identity and validation responses
+- `GET /reward_config` for the current validator fingerprint, reward weights `w0..w7`, caps, `r_max`, matching policy, judge model, rubric version, and IPT threshold
+- `GET /monitor_summary` for aggregate record count, semantic pass rate, T0 pass rate, T1 availability, veto rate, average requirement coverage, average reward, average latency, stable rate, and the single-window divergence alert field
+- Deterministic divergence helpers for `semantic_without_coverage`, `veto_rate_increase`, and `stable_at_k_drop`
+- A local `online_reward` throughput smoke test that sends reference, perturbation, and intent inputs while checking full-mode-only structural, IPT, and intent work does not leak into the online path
+
+Not implemented in H6:
+
+- Persistent storage for validation records
+- Dashboard UI, charts, or frontend visualization
+- External metrics systems, hosted logging, or tracing
+- Authentication, tenancy, retention policies, or background jobs
+- Real SysML backend performance benchmarking
+- Runtime mutation of reward weights or verifier configuration
+
 ## Install
 
 ```powershell
@@ -126,6 +146,14 @@ Batch robustness example:
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/validate_batch -ContentType "application/json" -Body '{"texts":["part A attribute x","part B unresolved_ref","part C type_error"],"mode":"online_reward"}'
 ```
 
+Reward operations examples:
+
+```powershell
+Invoke-RestMethod -Method Get -Uri http://127.0.0.1:8000/reward_config
+Invoke-RestMethod -Method Get -Uri http://127.0.0.1:8000/monitor_summary
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/validate -ContentType "application/json" -Body '{"text":"part A attribute x","mode":"online_reward","metadata":{"domain":"vehicle","checkpoint":"rft-001"}}'
+```
+
 Structural matching example:
 
 ```powershell
@@ -145,5 +173,7 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/validate -ContentType 
 ```
 
 The H5 intent judge is a deterministic local harness, not a real LLM call. It preserves the Stage 5 schema and calibration boundary so future LLM judge adapters can be added without changing the deterministic reward path. `intent.score` is for monitoring and preference workflows only; it is not used by `reward.py`.
+
+The H6 monitor is also local and deterministic. Validation records are held in process memory and reset when the service restarts. Cache hits are still recorded as validation service events, so `/monitor_summary` reflects API traffic rather than only fresh pipeline executions. The `/monitor_summary` endpoint returns a single-window summary whose `divergence_alerts` field is empty; cross-window divergence detection is available as a pure helper for callers that compare previous and current aggregate windows. The online reward smoke test is a local regression check, not a real SysML backend benchmark.
 
 The adapter, structural, and IPT behaviors are a deterministic harness, not a real SysML parser or equivalence prover. Markers such as `syntax_error`, `unresolved_ref`, `type_error`, `parser_disagreement`, and `summary_disagreement` exercise the stage gates and H2 robustness checks for tests and local development. H3 structural matching and H4 IPT use the same lightweight element markers and exact frozen policy.
