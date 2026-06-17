@@ -123,6 +123,23 @@ def test_metadata_does_not_change_cache_identity_but_records_each_event():
     assert [record.cache_hit for record in records] == [False, True]
 
 
+def test_cache_hit_record_uses_event_latency_not_cached_pipeline_latency():
+    client = TestClient(app)
+    payload = {"text": "part A attribute x", "mode": "online_reward"}
+
+    client.post("/validate", json=payload)
+    cached_payload = next(iter(validation_cache._items.values()))
+    cached_payload["meta"]["latency_ms"] = 999999
+    second = client.post("/validate", json=payload).json()
+
+    records = validation_records.list()
+    assert second["meta"]["cache_hit"] is True
+    assert second["meta"]["latency_ms"] < 999999
+    assert records[1].cache_hit is True
+    assert records[1].latency_ms < 999999
+    assert next(iter(validation_cache._items.values()))["meta"]["latency_ms"] == 999999
+
+
 def test_validate_full_with_reference_returns_structural_scores():
     client = TestClient(app)
     payload = {

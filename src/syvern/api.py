@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from time import perf_counter
 
 from fastapi import FastAPI
 
@@ -45,6 +46,7 @@ def _validate_with_cache(
     intent_reference: dict | None,
     metadata: dict[str, str] | None,
 ) -> ValidateResponse:
+    started = perf_counter()
     text_hash = sha256_text(text)
     key = CacheKey(
         text_hash=text_hash,
@@ -58,6 +60,7 @@ def _validate_with_cache(
     if cached is not None:
         cached_payload = deepcopy(cached)
         cached_payload["meta"]["cache_hit"] = True
+        cached_payload["meta"]["latency_ms"] = int((perf_counter() - started) * 1000)
         response = ValidateResponse.model_validate(cached_payload)
         validation_records.add(make_validation_record(response, metadata=metadata))
         return response
