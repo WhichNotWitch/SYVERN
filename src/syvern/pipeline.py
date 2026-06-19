@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from syvern.adapters.base import ParseResult, element_summary_counter
 from syvern.adapters.stub import MontiCoreStubAdapter, PilotStubAdapter
 from syvern.models import (
     BatchMetaSummary,
@@ -66,7 +67,7 @@ class ValidationPipeline:
         parse_result = self.pilot.parse(text)
         parser_agreement: bool | None = None
         if mode == "full":
-            parser_agreement = self.monticore.parser_agrees(text, self.pilot)
+            parser_agreement = self._parser_agrees(text, parse_result)
 
         parse = ParseStage(
             reached=True,
@@ -306,6 +307,14 @@ class ValidationPipeline:
 
     def _elements(self, text: str) -> list[ElementSummary]:
         return self.pilot.parse(text).element_summary
+
+    def _parser_agrees(self, text: str, parse_result: ParseResult) -> bool:
+        monticore_result = self.monticore.parse(text)
+        return (
+            parse_result.ok == monticore_result.ok
+            and element_summary_counter(parse_result.element_summary)
+            == element_summary_counter(monticore_result.element_summary)
+        )
 
     def _formal_summary(self, result: Any) -> FormalSummary:
         return FormalSummary(

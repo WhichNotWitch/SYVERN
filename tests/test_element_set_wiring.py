@@ -113,6 +113,18 @@ def test_pipeline_parses_ipt_perturbations_with_pilot_adapter():
     assert pilot.parse_calls == ["plain original words", "plain equivalent perturbation"]
 
 
+def test_full_mode_parser_agreement_reuses_initial_pilot_parse():
+    pilot = FakeElementAdapter()
+
+    response = ValidationPipeline(pilot_adapter=pilot).validate(
+        "part vehicle.engine attribute vehicle.mass",
+        mode="full",
+    )
+
+    assert response.stage.parse.parser_agreement is True
+    assert pilot.parse_calls == ["part vehicle.engine attribute vehicle.mass"]
+
+
 def test_broken_model_scores_below_valid_with_syntax_aware_adapter():
     pipeline = ValidationPipeline(
         pilot_adapter=FakeElementAdapter(),
