@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from syvern.adapters.base import ParseResult, ResolveResult, TypecheckResult
 from syvern.models import ElementSummary, ErrorDetail
 from syvern.pipeline import ValidationPipeline
@@ -109,3 +111,36 @@ def test_pipeline_parses_ipt_perturbations_with_pilot_adapter():
 
     assert response.robustness.ipt_consistent is True
     assert pilot.parse_calls == ["plain original words", "plain equivalent perturbation"]
+
+
+def test_broken_model_scores_below_valid_with_syntax_aware_adapter():
+    pipeline = ValidationPipeline(
+        pilot_adapter=FakeElementAdapter(),
+        monticore_adapter=AgreeingMontiCoreAdapter(),
+    )
+
+    valid = pipeline.validate(
+        "part def Vehicle { attribute mass : Real; part engine : Engine; }",
+        mode="online_reward",
+    )
+    broken = pipeline.validate(
+        "broken part def Vehicle { attribute mass : ;",
+        mode="online_reward",
+    )
+
+    assert valid.stage.parse.ok is True
+    assert broken.stage.parse.ok is False
+    assert valid.meta.reward > broken.meta.reward
+
+
+def test_stub_element_extractor_is_not_imported_by_business_modules():
+    root = Path(__file__).resolve().parents[1]
+    offenders: list[str] = []
+    for path in (root / "src" / "syvern").rglob("*.py"):
+        if path.name == "stub.py" or "__pycache__" in path.parts:
+            continue
+        text = path.read_text(encoding="utf-8")
+        if "extract_element_summary" in text:
+            offenders.append(path.relative_to(root).as_posix())
+
+    assert offenders == []
