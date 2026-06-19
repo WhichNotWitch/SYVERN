@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import re
-from collections import Counter
 
-from syvern.adapters.base import ParseResult, ResolveResult, TypecheckResult, ValidatorAdapter
+from syvern.adapters.base import (
+    ParseResult,
+    ResolveResult,
+    TypecheckResult,
+    ValidatorAdapter,
+    element_summary_counter,
+)
 from syvern.models import ElementSummary, ErrorDetail
 from syvern.normalization import normalize_ws
 
@@ -21,12 +26,11 @@ def extract_element_summary(text: str) -> list[ElementSummary]:
     ]
 
 
-def element_summary_counter(items: list[ElementSummary]) -> Counter[tuple[str, str]]:
-    return Counter((item.type, item.qualified_name) for item in items)
-
-
 class PilotStubAdapter:
     name = "pilot-stub"
+
+    def fingerprint(self) -> str:
+        return "pilot-stub@0.6.0"
 
     def parse(self, text: str) -> ParseResult:
         normalized = normalize_ws(text)
@@ -75,6 +79,9 @@ class PilotStubAdapter:
 
 class MontiCoreStubAdapter(PilotStubAdapter):
     name = "monticore-stub"
+
+    def fingerprint(self) -> str:
+        return "monticore-stub@0.6.0"
 
     def parse(self, text: str) -> ParseResult:
         normalized = normalize_ws(text)

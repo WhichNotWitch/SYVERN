@@ -1,0 +1,4 @@
+{"case_id":"valid-basic","category":"valid","text":"part vehicle.engine attribute vehicle.mass","parse_ok":true,"unresolved_refs":0,"type_errors":0}
+{"case_id":"syntax-error","category":"syntax_error","text":"syntax_error part vehicle.engine","parse_ok":false,"unresolved_refs":0,"type_errors":0}
+{"case_id":"unresolved-ref","category":"unresolved_ref","text":"part vehicle.engine unresolved_ref","parse_ok":true,"unresolved_refs":1,"type_errors":0}
+{"case_id":"type-error","category":"type_error","text":"part vehicle.engine type_error","parse_ok":true,"unresolved_refs":0,"type_errors":1}

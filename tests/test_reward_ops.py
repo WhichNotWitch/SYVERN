@@ -27,9 +27,11 @@ def test_reward_config_summary_exposes_weights_caps_and_fingerprint():
     }
     assert summary.r_max == settings.r_max
     assert summary.matching_policy_id == settings.matching_policy_id
+    assert summary.fuzzy_threshold == settings.fuzzy_threshold
     assert summary.judge_model == settings.judge_model
     assert summary.rubric_version == settings.rubric_version
     assert summary.ipt_threshold == settings.ipt_threshold
+    assert summary.data_filter_min_reward == settings.data_filter_min_reward
 
 
 def test_validate_reward_settings_accepts_default_h6_settings():
@@ -48,6 +50,27 @@ def test_validate_reward_settings_rejects_invalid_r_max():
 
     with pytest.raises(ValueError, match="r_max must be positive"):
         validate_reward_settings(settings)
+
+
+def test_settings_rejects_negative_fuzzy_threshold():
+    with pytest.raises(ValueError, match="fuzzy_threshold must not be negative"):
+        SyvernSettings(fuzzy_threshold=-1)
+
+
+def test_settings_rejects_data_filter_threshold_outside_reward_range():
+    with pytest.raises(ValueError, match="data_filter_min_reward must be between 0.0 and r_max"):
+        SyvernSettings(data_filter_min_reward=-0.1)
+    with pytest.raises(ValueError, match="data_filter_min_reward must be between 0.0 and r_max"):
+        SyvernSettings(data_filter_min_reward=1.1)
+
+
+def test_settings_rejects_invalid_perturbation_generator_config():
+    with pytest.raises(ValueError, match="perturbation_model must not be empty"):
+        SyvernSettings(perturbation_model=" ")
+    with pytest.raises(ValueError, match="perturbation_rubric_version must not be empty"):
+        SyvernSettings(perturbation_rubric_version=" ")
+    with pytest.raises(ValueError, match="perturbation_timeout_s must be positive"):
+        SyvernSettings(perturbation_timeout_s=0.0)
 
 
 def test_validate_reward_settings_rejects_missing_identifier():

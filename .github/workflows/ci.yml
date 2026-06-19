@@ -1,0 +1,35 @@
+name: SYVERN CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package and CI tools
+        run: python -m pip install -e ".[ci]"
+
+      - name: Syntax compile
+        run: python -m compileall -q src tests
+
+      - name: Lint
+        run: python -m ruff check src tests
+
+      - name: Type check
+        run: python -m mypy src
+
+      - name: Test
+        run: python -m pytest -q
+
+      - name: Adapter alignment smoke
+        run: syvern align --adapter pilot-stub --dataset data/alignment/stub_smoke.jsonl --min-overall 1.0

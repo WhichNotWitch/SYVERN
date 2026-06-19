@@ -8,6 +8,7 @@ from syvern.models import (
     BatchMetaSummary,
     BatchValidateResponse,
     ConstraintStage,
+    FormalSummary,
     IntentSummary,
     MetaSummary,
     Mode,
@@ -33,10 +34,21 @@ from syvern.veto import evaluate_veto
 
 
 class ValidationPipeline:
-    def __init__(self, settings: SyvernSettings | None = None) -> None:
+    def __init__(
+        self,
+        settings: SyvernSettings | None = None,
+        pilot_adapter: Any | None = None,
+        monticore_adapter: Any | None = None,
+        formal_adapter: Any | None = None,
+        intent_judge: Any | None = None,
+        structural_matcher: Any | None = None,
+    ) -> None:
         self.settings = settings or SyvernSettings()
-        self.pilot = PilotStubAdapter()
-        self.monticore = MontiCoreStubAdapter()
+        self.pilot = pilot_adapter or PilotStubAdapter()
+        self.monticore = monticore_adapter or MontiCoreStubAdapter()
+        self.formal_adapter = formal_adapter
+        self.intent_judge = intent_judge
+        self.structural_matcher = structural_matcher
 
     def validate(
         self,
@@ -46,11 +58,12 @@ class ValidationPipeline:
         reference: dict[str, Any] | None = None,
         perturbations: list[str] | None = None,
         intent_reference: dict[str, Any] | None = None,
+        formal_properties: list[str] | None = None,
     ) -> ValidateResponse:
         started = time.perf_counter()
 
         parse_result = self.pilot.parse(text)
-        parser_agreement = True
+        parser_agreement: bool | None = None
         if mode == "full":
             parser_agreement = self.monticore.parser_agrees(text, self.pilot)
 
@@ -76,6 +89,7 @@ class ValidationPipeline:
                 reference=reference,
                 perturbations=perturbations,
                 intent_reference=intent_reference,
+                formal_properties=formal_properties,
             )
 
         resolve_result = self.pilot.resolve(text)
@@ -101,6 +115,7 @@ class ValidationPipeline:
                 reference=reference,
                 perturbations=perturbations,
                 intent_reference=intent_reference,
+                formal_properties=formal_properties,
             )
 
         typecheck_result = self.pilot.typecheck(text)
@@ -123,6 +138,7 @@ class ValidationPipeline:
             reference=reference,
             perturbations=perturbations,
             intent_reference=intent_reference,
+            formal_properties=formal_properties,
         )
 
     def validate_many(
@@ -133,6 +149,7 @@ class ValidationPipeline:
         reference: dict[str, Any] | None = None,
         perturbations: list[str] | None = None,
         intent_reference: dict[str, Any] | None = None,
+        formal_properties: list[str] | None = None,
     ) -> BatchValidateResponse:
         if not texts:
             raise ValueError("texts must not be empty")
@@ -143,6 +160,7 @@ class ValidationPipeline:
                 reference=reference,
                 perturbations=perturbations,
                 intent_reference=intent_reference,
+                formal_properties=formal_properties,
             )
             for text in texts
         ]
@@ -168,6 +186,7 @@ class ValidationPipeline:
         reference: dict[str, Any] | None,
         perturbations: list[str] | None,
         intent_reference: dict[str, Any] | None,
+        formal_properties: list[str] | None,
     ) -> ValidateResponse:
         semantic_path_passed = (
             stage.parse.reached
@@ -198,13 +217,13 @@ class ValidationPipeline:
                 extract_element_summary(text),
                 reference,
                 self.settings,
+                soft_matcher=self.structural_matcher,
             )
         robustness = RobustnessSummary()
         ipt_evaluated = (
             mode == "full"
             and perturbations is not None
             and bool(perturbations)
-            and structural.evaluated
             and semantic_path_passed
             and stage.constraint.reached
             and stage.constraint.ok
@@ -213,8 +232,8 @@ class ValidationPipeline:
         if ipt_evaluated:
             robustness = RobustnessSummary(
                 ipt_consistent=evaluate_ipt(
+                    original_text=text,
                     perturbations=perturbations,
-                    reference=reference,
                     settings=self.settings,
                 )
             )
@@ -229,7 +248,23 @@ class ValidationPipeline:
             and not veto.triggered
         )
         if intent_evaluated:
-            intent = evaluate_intent(text, intent_reference, self.settings)
+            if self.intent_judge is not None:
+                intent = self.intent_judge.judge(text, intent_reference)
+            else:
+                intent = evaluate_intent(text, intent_reference, self.settings)
+        formal = FormalSummary()
+        formal_adapter = self.formal_adapter
+        if (
+            formal_adapter is not None
+            and mode == "full"
+            and semantic_path_passed
+            and stage.constraint.reached
+            and stage.constraint.ok
+            and not veto.triggered
+        ):
+            formal = self._formal_summary(
+                formal_adapter.analyze(text, formal_properties or [])
+            )
         tier_summary = TierSummary(
             t0_pass=semantic_path_passed and stage.constraint.ok and not veto.triggered,
             t1_available=structural.evaluated,
@@ -244,6 +279,7 @@ class ValidationPipeline:
             structural=structural,
             robustness=robustness,
             intent=intent,
+            formal=formal,
             veto=veto,
             monitor=MonitorSummary(),
             meta=MetaSummary(
@@ -256,4 +292,33 @@ class ValidationPipeline:
             ),
         )
         response.meta.reward = compute_reward(response, self.settings)
+        self._apply_data_filter_decision(response)
         return response
+
+    def _formal_summary(self, result: Any) -> FormalSummary:
+        return FormalSummary(
+            evaluated=True,
+            tool=result.tool,
+            status=result.status,
+            properties_checked=result.properties_checked,
+            conclusions=list(result.conclusions),
+            counterexamples=list(result.counterexamples),
+        )
+
+    def _apply_data_filter_decision(self, response: ValidateResponse) -> None:
+        if response.meta.mode != "data_filter":
+            return
+        if response.veto.triggered:
+            response.meta.data_filter_pass = False
+            response.meta.data_filter_reason = "vetoed"
+            return
+        if not response.tier_summary.t0_pass:
+            response.meta.data_filter_pass = False
+            response.meta.data_filter_reason = "t0_failed"
+            return
+        if response.meta.reward < self.settings.data_filter_min_reward:
+            response.meta.data_filter_pass = False
+            response.meta.data_filter_reason = "reward_below_threshold"
+            return
+        response.meta.data_filter_pass = True
+        response.meta.data_filter_reason = "passed"

@@ -12,6 +12,9 @@ def _record(
     requirement_coverage: float = 0.0,
     reward: float = 0.5,
     latency_ms: int = 4,
+    prompt_id: str | None = None,
+    formal_evaluated: bool = False,
+    formal_status: str | None = None,
 ) -> ValidationRecord:
     return ValidationRecord(
         sample_id="sample",
@@ -28,6 +31,9 @@ def _record(
         stable_at_k=None,
         reward=reward,
         latency_ms=latency_ms,
+        prompt_id=prompt_id,
+        formal_evaluated=formal_evaluated,
+        formal_status=formal_status,
         metadata={},
     )
 
@@ -44,6 +50,11 @@ def test_empty_monitor_summary_returns_zero_rates_and_no_alerts():
     assert summary.average_reward == 0.0
     assert summary.average_latency_ms == 0.0
     assert summary.stable_at_k == 0.0
+    assert summary.formal_evaluated_count == 0
+    assert summary.formal_proved_rate == 0.0
+    assert summary.formal_failed_rate == 0.0
+    assert summary.formal_timeout_rate == 0.0
+    assert summary.formal_error_rate == 0.0
     assert summary.divergence_alerts == []
 
 
@@ -64,7 +75,40 @@ def test_monitor_summary_computes_rates_and_averages():
     assert summary.average_reward == 0.5
     assert summary.average_latency_ms == 15.0
     assert summary.stable_at_k == 0.5
+    assert summary.formal_evaluated_count == 0
     assert summary.divergence_alerts == []
+
+
+def test_monitor_summary_aggregates_formal_status_rates_over_evaluated_runs():
+    summary = aggregate_monitor_summary(
+        [
+            _record(formal_evaluated=True, formal_status="proved"),
+            _record(formal_evaluated=True, formal_status="failed"),
+            _record(formal_evaluated=True, formal_status="timeout"),
+            _record(formal_evaluated=True, formal_status="error"),
+            _record(formal_evaluated=False, formal_status=None),
+        ]
+    )
+
+    assert summary.record_count == 5
+    assert summary.formal_evaluated_count == 4
+    assert summary.formal_proved_rate == 0.25
+    assert summary.formal_failed_rate == 0.25
+    assert summary.formal_timeout_rate == 0.25
+    assert summary.formal_error_rate == 0.25
+
+
+def test_monitor_summary_computes_stable_at_k_by_prompt_group():
+    summary = aggregate_monitor_summary(
+        [
+            _record(prompt_id="prompt-a", semantic_pass=True),
+            _record(prompt_id="prompt-a", semantic_pass=False, t0_pass=False),
+            _record(prompt_id="prompt-b", semantic_pass=True),
+        ]
+    )
+
+    assert summary.semantic_pass_rate == 2 / 3
+    assert summary.stable_at_k == 0.75
 
 
 def test_divergence_flags_semantic_gain_without_coverage_gain():

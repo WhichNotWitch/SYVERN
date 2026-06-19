@@ -1,4 +1,8 @@
+from pathlib import Path
+from uuid import uuid4
+
 from syvern.cache import CacheKey, InMemoryValidationCache
+from syvern.cache import SQLiteValidationCache
 from syvern.normalization import intent_reference_identity
 from syvern.normalization import perturbation_identity, reference_identity, sha256_text, token_count
 from syvern.settings import SyvernSettings
@@ -67,6 +71,47 @@ def test_cache_get_isolates_nested_validation_payloads():
     assert cache.get(key)["meta"]["cache_hit"] is False
 
 
+def test_cache_evicts_least_recently_used_item_when_capacity_is_exceeded():
+    cache = InMemoryValidationCache(max_size=2)
+    first = CacheKey("first", "fingerprint", "online_reward", "none")
+    second = CacheKey("second", "fingerprint", "online_reward", "none")
+    third = CacheKey("third", "fingerprint", "online_reward", "none")
+
+    cache.set(first, {"sample_id": "first"})
+    cache.set(second, {"sample_id": "second"})
+    cache.set(third, {"sample_id": "third"})
+
+    assert cache.get(first) is None
+    assert cache.get(second) == {"sample_id": "second"}
+    assert cache.get(third) == {"sample_id": "third"}
+
+
+def test_cache_get_refreshes_lru_recency():
+    cache = InMemoryValidationCache(max_size=2)
+    first = CacheKey("first", "fingerprint", "online_reward", "none")
+    second = CacheKey("second", "fingerprint", "online_reward", "none")
+    third = CacheKey("third", "fingerprint", "online_reward", "none")
+
+    cache.set(first, {"sample_id": "first"})
+    cache.set(second, {"sample_id": "second"})
+    assert cache.get(first) == {"sample_id": "first"}
+    cache.set(third, {"sample_id": "third"})
+
+    assert cache.get(first) == {"sample_id": "first"}
+    assert cache.get(second) is None
+    assert cache.get(third) == {"sample_id": "third"}
+
+
+def test_cache_rejects_non_positive_capacity():
+    for max_size in (0, -1):
+        try:
+            InMemoryValidationCache(max_size=max_size)
+        except ValueError as exc:
+            assert "max_size must be positive" in str(exc)
+        else:
+            raise AssertionError("expected invalid cache capacity to raise")
+
+
 def test_intent_reference_identity_normalizes_nested_string_whitespace():
     left = intent_reference_identity(
         {
@@ -94,3 +139,62 @@ def test_cache_key_includes_intent_reference_identity():
     changed_intent = CacheKey("abc", "fingerprint", "full", "ref", "pert", "intent-b")
 
     assert base != changed_intent
+
+
+def test_sqlite_cache_persists_payloads_across_instances():
+    db_path = Path(".pytest_tmp") / f"cache-{uuid4().hex}.sqlite3"
+    db_path.parent.mkdir(exist_ok=True)
+    key = CacheKey("abc", "fingerprint", "full", "ref", "pert", "intent", "formal")
+    payload = {"sample_id": "sample-abc", "meta": {"cache_hit": False}}
+
+    try:
+        cache = SQLiteValidationCache(db_path)
+        cache.set(key, payload)
+        payload["meta"]["cache_hit"] = True
+
+        reopened = SQLiteValidationCache(db_path)
+        cached = reopened.get(key)
+        assert cached == {"sample_id": "sample-abc", "meta": {"cache_hit": False}}
+
+        cached["meta"]["cache_hit"] = True
+        assert reopened.get(key)["meta"]["cache_hit"] is False
+    finally:
+        db_path.unlink(missing_ok=True)
+
+
+def test_sqlite_cache_isolates_validator_fingerprint_and_clears():
+    db_path = Path(".pytest_tmp") / f"cache-{uuid4().hex}.sqlite3"
+    db_path.parent.mkdir(exist_ok=True)
+    key = CacheKey("abc", "fingerprint-a", "online_reward", "none")
+    changed_fingerprint = CacheKey("abc", "fingerprint-b", "online_reward", "none")
+
+    try:
+        cache = SQLiteValidationCache(db_path)
+        cache.set(key, {"sample_id": "sample-abc"})
+
+        assert cache.get(changed_fingerprint) is None
+        cache.clear()
+        assert SQLiteValidationCache(db_path).get(key) is None
+    finally:
+        db_path.unlink(missing_ok=True)
+
+
+def test_sqlite_cache_evicts_least_recently_used_item():
+    db_path = Path(".pytest_tmp") / f"cache-{uuid4().hex}.sqlite3"
+    db_path.parent.mkdir(exist_ok=True)
+    first = CacheKey("first", "fingerprint", "online_reward", "none")
+    second = CacheKey("second", "fingerprint", "online_reward", "none")
+    third = CacheKey("third", "fingerprint", "online_reward", "none")
+
+    try:
+        cache = SQLiteValidationCache(db_path, max_size=2)
+        cache.set(first, {"sample_id": "first"})
+        cache.set(second, {"sample_id": "second"})
+        assert cache.get(first) == {"sample_id": "first"}
+        cache.set(third, {"sample_id": "third"})
+
+        assert cache.get(first) == {"sample_id": "first"}
+        assert cache.get(second) is None
+        assert cache.get(third) == {"sample_id": "third"}
+    finally:
+        db_path.unlink(missing_ok=True)

@@ -16,7 +16,7 @@ def test_matching_intent_reference_returns_evaluated_score():
     )
 
     assert result.evaluated is True
-    assert result.source == "llm_judge"
+    assert result.source == "heuristic"
     assert result.score is not None
     assert result.score > 3.0
 

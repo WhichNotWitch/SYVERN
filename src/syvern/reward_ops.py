@@ -19,9 +19,11 @@ def reward_config_summary(settings: SyvernSettings) -> RewardConfigSummary:
         },
         r_max=settings.r_max,
         matching_policy_id=settings.matching_policy_id,
+        fuzzy_threshold=settings.fuzzy_threshold,
         judge_model=settings.judge_model,
         rubric_version=settings.rubric_version,
         ipt_threshold=settings.ipt_threshold,
+        data_filter_min_reward=settings.data_filter_min_reward,
     )
 
 
@@ -38,3 +40,7 @@ def validate_reward_settings(settings: SyvernSettings) -> None:
             raise ValueError(f"{name} must be positive")
     if settings.r_max <= 0:
         raise ValueError("r_max must be positive")
+    if settings.fuzzy_threshold < 0:
+        raise ValueError("fuzzy_threshold must not be negative")
+    if not 0.0 <= settings.data_filter_min_reward <= settings.r_max:
+        raise ValueError("data_filter_min_reward must be between 0.0 and r_max")

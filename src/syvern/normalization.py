@@ -51,3 +51,7 @@ def perturbation_identity(perturbations: list[str] | None) -> str:
         return "none"
     normalized = [normalize_ws(item) for item in perturbations]
     return sha256_text(json.dumps(normalized, separators=(",", ":"), ensure_ascii=True))
+
+
+def formal_properties_identity(properties: list[str] | None) -> str:
+    return perturbation_identity(properties)

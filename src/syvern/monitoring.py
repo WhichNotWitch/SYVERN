@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from syvern.models import DivergenceAlert, MonitorAggregateSummary
+from collections import defaultdict
+
+from syvern.models import (
+    DashboardRecentRecord,
+    DashboardSnapshot,
+    DashboardTenantSummary,
+    DivergenceAlert,
+    MonitorAggregateSummary,
+)
 from syvern.records import ValidationRecord
 from syvern.settings import SyvernSettings
 
@@ -17,8 +25,23 @@ def _average(values: list[float]) -> float:
     return sum(values) / len(values)
 
 
+def _stable_at_k_by_prompt(records: list[ValidationRecord]) -> float:
+    groups: dict[str, list[ValidationRecord]] = defaultdict(list)
+    for index, record in enumerate(records):
+        prompt_key = record.prompt_id or f"record:{index}:{record.text_hash}"
+        groups[prompt_key].append(record)
+    return _average(
+        [
+            _rate(sum(1 for record in group if record.semantic_pass), len(group))
+            for group in groups.values()
+        ]
+    )
+
+
 def aggregate_monitor_summary(records: list[ValidationRecord]) -> MonitorAggregateSummary:
     total = len(records)
+    formal_records = [record for record in records if record.formal_evaluated]
+    formal_total = len(formal_records)
     return MonitorAggregateSummary(
         record_count=total,
         semantic_pass_rate=_rate(sum(1 for record in records if record.semantic_pass), total),
@@ -28,8 +51,60 @@ def aggregate_monitor_summary(records: list[ValidationRecord]) -> MonitorAggrega
         average_requirement_coverage=_average([record.requirement_coverage for record in records]),
         average_reward=_average([record.reward for record in records]),
         average_latency_ms=_average([float(record.latency_ms) for record in records]),
-        stable_at_k=_rate(sum(1 for record in records if record.semantic_pass), total),
+        stable_at_k=_stable_at_k_by_prompt(records),
+        formal_evaluated_count=formal_total,
+        formal_proved_rate=_rate(sum(1 for record in formal_records if record.formal_status == "proved"), formal_total),
+        formal_failed_rate=_rate(sum(1 for record in formal_records if record.formal_status == "failed"), formal_total),
+        formal_timeout_rate=_rate(sum(1 for record in formal_records if record.formal_status == "timeout"), formal_total),
+        formal_error_rate=_rate(sum(1 for record in formal_records if record.formal_status == "error"), formal_total),
         divergence_alerts=[],
+    )
+
+
+def aggregate_dashboard_snapshot(
+    records: list[ValidationRecord],
+    *,
+    summary: MonitorAggregateSummary,
+    validator_fingerprint: str,
+    recent_limit: int,
+) -> DashboardSnapshot:
+    tenant_groups: dict[str, list[ValidationRecord]] = defaultdict(list)
+    for record in records:
+        tenant_id = record.metadata.get("tenant_id") or "unassigned"
+        tenant_groups[tenant_id].append(record)
+
+    tenant_summaries = [
+        DashboardTenantSummary(
+            tenant_id=tenant_id,
+            record_count=len(group),
+            semantic_pass_rate=_rate(sum(1 for record in group if record.semantic_pass), len(group)),
+            average_reward=_average([record.reward for record in group]),
+        )
+        for tenant_id, group in sorted(tenant_groups.items())
+    ]
+    recent_records = [
+        DashboardRecentRecord(
+            sample_id=record.sample_id,
+            text_hash=record.text_hash,
+            mode=record.mode,
+            cache_hit=record.cache_hit,
+            semantic_pass=record.semantic_pass,
+            t0_pass=record.t0_pass,
+            veto_triggered=record.veto_triggered,
+            veto_reason=record.veto_reason,
+            reward=record.reward,
+            latency_ms=record.latency_ms,
+            tenant_id=record.metadata.get("tenant_id"),
+            prompt_id=record.prompt_id,
+            formal_status=record.formal_status,
+        )
+        for record in reversed(records[-recent_limit:] if recent_limit > 0 else [])
+    ]
+    return DashboardSnapshot(
+        validator_fingerprint=validator_fingerprint,
+        summary=summary,
+        tenant_summaries=tenant_summaries,
+        recent_records=recent_records,
     )
 
 

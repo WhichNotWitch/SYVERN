@@ -23,7 +23,7 @@ def compute_reward(response: ValidateResponse, settings: SyvernSettings) -> floa
     st = response.structural
     w = settings.weights
 
-    parse_passed = s.parse.reached and s.parse.ok and s.parse.parser_agreement
+    parse_passed = s.parse.reached and s.parse.ok and s.parse.parser_agreement is not False
     resolve_passed = parse_passed and s.resolve.reached and s.resolve.ok
     typecheck_reached = resolve_passed and s.typecheck.reached
     constraint_reached = resolve_passed and s.constraint.reached

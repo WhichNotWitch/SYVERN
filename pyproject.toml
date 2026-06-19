@@ -13,10 +13,19 @@ dependencies = [
   "uvicorn>=0.30",
 ]
 
+[project.scripts]
+syvern = "syvern.cli:run"
+
 [project.optional-dependencies]
 test = [
   "pytest>=8.2",
   "httpx>=0.27",
+]
+ci = [
+  "pytest>=8.2",
+  "httpx>=0.27",
+  "ruff>=0.5",
+  "mypy>=1.10",
 ]
 
 [tool.setuptools.packages.find]
@@ -25,3 +34,18 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["F"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+no_strict_optional = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = false

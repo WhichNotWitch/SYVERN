@@ -1,0 +1,3 @@
+part vehicle.engine attribute vehicle.mass
+
+part vehicle.body connection vehicle.body_to_engine

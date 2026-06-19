@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -27,6 +28,10 @@ class TypecheckResult:
     errors: list[ErrorDetail] = field(default_factory=list)
 
 
+def element_summary_counter(items: list[ElementSummary]) -> Counter[tuple[str, str]]:
+    return Counter((item.type, item.qualified_name) for item in items)
+
+
 class ValidatorAdapter(Protocol):
     name: str
 
@@ -37,4 +42,7 @@ class ValidatorAdapter(Protocol):
         raise NotImplementedError
 
     def typecheck(self, text: str) -> TypecheckResult:
+        raise NotImplementedError
+
+    def fingerprint(self) -> str:
         raise NotImplementedError

@@ -11,10 +11,10 @@ def evaluate_veto(
     text: str,
     settings: SyvernSettings,
     semantic_path_passed: bool,
-    parser_agreement: bool,
+    parser_agreement: bool | None,
     violations: list[Violation],
 ) -> VetoSummary:
-    if not parser_agreement:
+    if parser_agreement is False:
         return VetoSummary(triggered=True, reason="parser_disagreement")
 
     if any(v.category == "anti_gaming" and v.severity == "error" for v in violations):

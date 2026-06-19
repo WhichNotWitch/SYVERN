@@ -24,7 +24,7 @@ from syvern.veto import evaluate_veto
 
 def _response(
     intent_score: float | None = None,
-    intent_source: Literal["llm_judge", "human"] | None = None,
+    intent_source: Literal["heuristic", "llm_judge", "human"] | None = None,
     intent_evaluated: bool | None = None,
     veto: bool = False,
     stage: StageSummary | None = None,
@@ -143,6 +143,19 @@ def test_veto_triggers_for_error_anti_gaming_rule():
     assert veto.reason == "anti_gaming_rule"
 
 
+def test_veto_ignores_unknown_parser_agreement():
+    veto = evaluate_veto(
+        text="part A attribute x",
+        settings=SyvernSettings(),
+        semantic_path_passed=True,
+        parser_agreement=None,
+        violations=[],
+    )
+
+    assert veto.triggered is False
+    assert veto.reason is None
+
+
 def test_reward_is_zero_when_veto_triggers():
     assert compute_reward(_response(veto=True), SyvernSettings()) == 0.0
 
@@ -164,12 +177,16 @@ def test_reward_ignores_evaluated_intent_source_and_score():
         _response(intent_score=5.0, intent_source="llm_judge", intent_evaluated=True),
         settings,
     )
+    heuristic_mid = compute_reward(
+        _response(intent_score=3.0, intent_source="heuristic", intent_evaluated=True),
+        settings,
+    )
     human_low = compute_reward(
         _response(intent_score=0.0, intent_source="human", intent_evaluated=True),
         settings,
     )
 
-    assert unevaluated == llm_high == human_low
+    assert unevaluated == llm_high == heuristic_mid == human_low
 
 
 def test_reward_does_not_credit_downstream_when_parse_fails():
@@ -194,6 +211,18 @@ def test_reward_does_not_credit_downstream_when_parser_disagrees():
     )
 
     assert compute_reward(_response(stage=stage), settings) == 0.0
+
+
+def test_reward_credits_parse_when_parser_agreement_is_unknown():
+    settings = SyvernSettings()
+    stage = StageSummary(
+        parse=ParseStage(reached=True, ok=True, parser_agreement=None, errors=[]),
+        resolve=ResolveStage(reached=False, ok=False, unresolved_refs=0, errors=[]),
+        typecheck=TypecheckStage(reached=False, ok=False, type_errors=0, errors=[]),
+        constraint=ConstraintStage(reached=False, ok=False, violations=[]),
+    )
+
+    assert compute_reward(_response(stage=stage), settings) == settings.weights.w0
 
 
 def test_reward_does_not_credit_unreached_typecheck_or_constraint_after_resolve_failure():

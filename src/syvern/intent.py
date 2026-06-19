@@ -102,4 +102,4 @@ def evaluate_intent(text: str, intent_reference: dict[str, Any] | None, settings
         votes.append(score)
 
     averaged = sum(votes) / len(votes)
-    return IntentSummary(evaluated=True, score=max(0.0, min(5.0, averaged)), source="llm_judge")
+    return IntentSummary(evaluated=True, score=max(0.0, min(5.0, averaged)), source="heuristic")
