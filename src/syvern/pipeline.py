@@ -3,11 +3,12 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from syvern.adapters.stub import MontiCoreStubAdapter, PilotStubAdapter, extract_element_summary
+from syvern.adapters.stub import MontiCoreStubAdapter, PilotStubAdapter
 from syvern.models import (
     BatchMetaSummary,
     BatchValidateResponse,
     ConstraintStage,
+    ElementSummary,
     FormalSummary,
     IntentSummary,
     MetaSummary,
@@ -83,6 +84,7 @@ class ValidationPipeline:
             )
             return self._finish(
                 text=text,
+                elements=parse_result.element_summary,
                 mode=mode,
                 stage=stage,
                 started=started,
@@ -109,6 +111,7 @@ class ValidationPipeline:
             )
             return self._finish(
                 text=text,
+                elements=parse_result.element_summary,
                 mode=mode,
                 stage=stage,
                 started=started,
@@ -126,12 +129,13 @@ class ValidationPipeline:
             errors=typecheck_result.errors,
         )
 
-        violations = evaluate_rules(text, self.settings)
+        violations = evaluate_rules(text, parse_result.element_summary, self.settings)
         constraint = ConstraintStage(reached=True, ok=not violations, violations=violations)
         stage = StageSummary(parse=parse, resolve=resolve, typecheck=typecheck, constraint=constraint)
 
         return self._finish(
             text=text,
+            elements=parse_result.element_summary,
             mode=mode,
             stage=stage,
             started=started,
@@ -180,6 +184,7 @@ class ValidationPipeline:
         self,
         *,
         text: str,
+        elements: list[ElementSummary],
         mode: Mode,
         stage: StageSummary,
         started: float,
@@ -198,6 +203,7 @@ class ValidationPipeline:
         )
         veto = evaluate_veto(
             text=text,
+            elements=elements,
             settings=self.settings,
             semantic_path_passed=semantic_path_passed,
             parser_agreement=stage.parse.parser_agreement,
@@ -214,7 +220,7 @@ class ValidationPipeline:
         )
         if structural_evaluated:
             structural = match_structural(
-                extract_element_summary(text),
+                elements,
                 reference,
                 self.settings,
                 soft_matcher=self.structural_matcher,

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from syvern.adapters.stub import extract_element_summary
-from syvern.models import VetoSummary, Violation
+from syvern.models import ElementSummary, VetoSummary, Violation
 from syvern.normalization import token_count
 from syvern.settings import SyvernSettings
 
@@ -9,6 +8,7 @@ from syvern.settings import SyvernSettings
 def evaluate_veto(
     *,
     text: str,
+    elements: list[ElementSummary],
     settings: SyvernSettings,
     semantic_path_passed: bool,
     parser_agreement: bool | None,
@@ -23,7 +23,7 @@ def evaluate_veto(
     if semantic_path_passed:
         if token_count(text) < settings.min_tokens:
             return VetoSummary(triggered=True, reason="degenerate_output")
-        if len(extract_element_summary(text)) < settings.min_elements:
+        if len(elements) < settings.min_elements:
             return VetoSummary(triggered=True, reason="degenerate_output")
 
     return VetoSummary(triggered=False, reason=None)
