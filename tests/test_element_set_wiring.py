@@ -60,7 +60,14 @@ class AgreeingMontiCoreAdapter:
         return "agreeing-monticore@1"
 
     def parse(self, text: str) -> ParseResult:
-        return ParseResult(ok=True, errors=[], element_summary=[])
+        return ParseResult(
+            ok=True,
+            errors=[],
+            element_summary=[
+                ElementSummary(type="part", qualified_name="vehicle.engine"),
+                ElementSummary(type="attribute", qualified_name="vehicle.mass"),
+            ],
+        )
 
     def resolve(self, text: str) -> ResolveResult:
         return ResolveResult(ok=True, unresolved_refs=0, errors=[])
