@@ -238,8 +238,10 @@ class ValidationPipeline:
         if ipt_evaluated:
             robustness = RobustnessSummary(
                 ipt_consistent=evaluate_ipt(
-                    original_text=text,
-                    perturbations=perturbations,
+                    original_elements=elements,
+                    perturbation_element_sets=[
+                        self._elements(perturbation) for perturbation in perturbations
+                    ],
                     settings=self.settings,
                 )
             )
@@ -300,6 +302,9 @@ class ValidationPipeline:
         response.meta.reward = compute_reward(response, self.settings)
         self._apply_data_filter_decision(response)
         return response
+
+    def _elements(self, text: str) -> list[ElementSummary]:
+        return self.pilot.parse(text).element_summary
 
     def _formal_summary(self, result: Any) -> FormalSummary:
         return FormalSummary(

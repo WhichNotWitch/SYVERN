@@ -93,3 +93,19 @@ def test_pipeline_consumes_adapter_elements_for_rules_veto_and_structural():
     assert {violation.rule for violation in response.stage.constraint.violations} == set()
     assert response.structural.evaluated is True
     assert response.structural.f1 == 1.0
+
+
+def test_pipeline_parses_ipt_perturbations_with_pilot_adapter():
+    pilot = FakeElementAdapter()
+
+    response = ValidationPipeline(
+        pilot_adapter=pilot,
+        monticore_adapter=AgreeingMontiCoreAdapter(),
+    ).validate(
+        "plain original words",
+        mode="full",
+        perturbations=["plain equivalent perturbation"],
+    )
+
+    assert response.robustness.ipt_consistent is True
+    assert pilot.parse_calls == ["plain original words", "plain equivalent perturbation"]
