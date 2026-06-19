@@ -236,6 +236,7 @@ class ValidationPipeline:
             and not veto.triggered
         )
         if ipt_evaluated:
+            assert perturbations is not None
             robustness = RobustnessSummary(
                 ipt_consistent=evaluate_ipt(
                     original_elements=elements,
