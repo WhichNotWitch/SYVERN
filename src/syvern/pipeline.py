@@ -3,11 +3,13 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from syvern.adapters.stub import MontiCoreStubAdapter, PilotStubAdapter, extract_element_summary
+from syvern.adapters.base import ParseResult, element_summary_counter
+from syvern.adapters.stub import MontiCoreStubAdapter, PilotStubAdapter
 from syvern.models import (
     BatchMetaSummary,
     BatchValidateResponse,
     ConstraintStage,
+    ElementSummary,
     FormalSummary,
     IntentSummary,
     MetaSummary,
@@ -65,7 +67,7 @@ class ValidationPipeline:
         parse_result = self.pilot.parse(text)
         parser_agreement: bool | None = None
         if mode == "full":
-            parser_agreement = self.monticore.parser_agrees(text, self.pilot)
+            parser_agreement = self._parser_agrees(text, parse_result)
 
         parse = ParseStage(
             reached=True,
@@ -83,6 +85,7 @@ class ValidationPipeline:
             )
             return self._finish(
                 text=text,
+                elements=parse_result.element_summary,
                 mode=mode,
                 stage=stage,
                 started=started,
@@ -109,6 +112,7 @@ class ValidationPipeline:
             )
             return self._finish(
                 text=text,
+                elements=parse_result.element_summary,
                 mode=mode,
                 stage=stage,
                 started=started,
@@ -126,12 +130,13 @@ class ValidationPipeline:
             errors=typecheck_result.errors,
         )
 
-        violations = evaluate_rules(text, self.settings)
+        violations = evaluate_rules(text, parse_result.element_summary, self.settings)
         constraint = ConstraintStage(reached=True, ok=not violations, violations=violations)
         stage = StageSummary(parse=parse, resolve=resolve, typecheck=typecheck, constraint=constraint)
 
         return self._finish(
             text=text,
+            elements=parse_result.element_summary,
             mode=mode,
             stage=stage,
             started=started,
@@ -180,6 +185,7 @@ class ValidationPipeline:
         self,
         *,
         text: str,
+        elements: list[ElementSummary],
         mode: Mode,
         stage: StageSummary,
         started: float,
@@ -198,6 +204,7 @@ class ValidationPipeline:
         )
         veto = evaluate_veto(
             text=text,
+            elements=elements,
             settings=self.settings,
             semantic_path_passed=semantic_path_passed,
             parser_agreement=stage.parse.parser_agreement,
@@ -214,7 +221,7 @@ class ValidationPipeline:
         )
         if structural_evaluated:
             structural = match_structural(
-                extract_element_summary(text),
+                elements,
                 reference,
                 self.settings,
                 soft_matcher=self.structural_matcher,
@@ -230,10 +237,13 @@ class ValidationPipeline:
             and not veto.triggered
         )
         if ipt_evaluated:
+            assert perturbations is not None
             robustness = RobustnessSummary(
                 ipt_consistent=evaluate_ipt(
-                    original_text=text,
-                    perturbations=perturbations,
+                    original_elements=elements,
+                    perturbation_element_sets=[
+                        self._elements(perturbation) for perturbation in perturbations
+                    ],
                     settings=self.settings,
                 )
             )
@@ -294,6 +304,17 @@ class ValidationPipeline:
         response.meta.reward = compute_reward(response, self.settings)
         self._apply_data_filter_decision(response)
         return response
+
+    def _elements(self, text: str) -> list[ElementSummary]:
+        return self.pilot.parse(text).element_summary
+
+    def _parser_agrees(self, text: str, parse_result: ParseResult) -> bool:
+        monticore_result = self.monticore.parse(text)
+        return (
+            parse_result.ok == monticore_result.ok
+            and element_summary_counter(parse_result.element_summary)
+            == element_summary_counter(monticore_result.element_summary)
+        )
 
     def _formal_summary(self, result: Any) -> FormalSummary:
         return FormalSummary(

@@ -3,8 +3,7 @@ from __future__ import annotations
 from collections import Counter
 import re
 
-from syvern.adapters.stub import extract_element_summary
-from syvern.models import Violation
+from syvern.models import ElementSummary, Violation
 from syvern.normalization import normalize_ws
 from syvern.settings import SyvernSettings
 
@@ -28,10 +27,9 @@ def enumeration_base_name(qualified_name: str) -> str:
     return NUMERIC_SUFFIX_RE.sub("", last_name_segment(qualified_name)) or last_name_segment(qualified_name)
 
 
-def evaluate_rules(text: str, settings: SyvernSettings) -> list[Violation]:
+def evaluate_rules(text: str, elements: list[ElementSummary], settings: SyvernSettings) -> list[Violation]:
     normalized = normalize_ws(text).lower()
     violations: list[Violation] = []
-    elements = extract_element_summary(text)
 
     if re.search(r"\b(todo|tbd|filler|dummy)\b", normalized) or "???" in normalized:
         violations.append(Violation(rule="no_filler_text", severity="error", category="anti_gaming"))

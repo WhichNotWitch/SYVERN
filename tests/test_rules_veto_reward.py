@@ -1,8 +1,9 @@
 from typing import Literal
 
-from syvern.adapters.stub import MontiCoreStubAdapter, PilotStubAdapter
+from syvern.adapters.stub import MontiCoreStubAdapter, PilotStubAdapter, extract_element_summary
 from syvern.models import (
     ConstraintStage,
+    ElementSummary,
     IntentSummary,
     MonitorSummary,
     ParseStage,
@@ -20,6 +21,15 @@ from syvern.reward import compute_reward
 from syvern.rules import evaluate_rules, weighted_violations
 from syvern.settings import RewardWeights, SyvernSettings
 from syvern.veto import evaluate_veto
+
+
+def _elements(text: str):
+    return extract_element_summary(text)
+
+
+def _evaluate_rules(text: str, settings: SyvernSettings | None = None):
+    resolved_settings = settings or SyvernSettings()
+    return evaluate_rules(text, _elements(text), resolved_settings)
 
 
 def _response(
@@ -76,7 +86,7 @@ def test_monticore_stub_disagrees_on_marker():
 
 
 def test_anti_gaming_rules_are_weighted():
-    violations = evaluate_rules("filler filler filler", SyvernSettings())
+    violations = _evaluate_rules("filler filler filler", SyvernSettings())
     assert any(v.rule == "no_filler_text" for v in violations)
     assert weighted_violations(violations) >= 2
 
@@ -84,25 +94,25 @@ def test_anti_gaming_rules_are_weighted():
 def test_filler_marker_rules_include_h1_spec_markers():
     settings = SyvernSettings()
     for marker in ("todo", "tbd", "filler", "dummy", "???"):
-        violations = evaluate_rules(f"part A {marker} marker", settings)
+        violations = _evaluate_rules(f"part A {marker} marker", settings)
         assert any(v.rule == "no_filler_text" for v in violations)
 
 
 def test_repetition_rule_applies_below_min_tokens():
-    violations = evaluate_rules("x x", SyvernSettings())
+    violations = _evaluate_rules("x x", SyvernSettings())
     rules = {v.rule for v in violations}
     assert "no_excessive_repetition" in rules
     assert "minimum_model_signal" in rules
 
 
 def test_placeholder_element_names_trigger_anti_gaming_rule():
-    violations = evaluate_rules("part item1 attribute placeholder", SyvernSettings())
+    violations = _evaluate_rules("part item1 attribute placeholder", SyvernSettings())
     assert any(v.rule == "no_placeholder_names" for v in violations)
 
 
 def test_enumeration_style_elements_trigger_anti_gaming_rule():
     text = "part wheel1 part wheel2 part wheel3 part wheel4"
-    violations = evaluate_rules(text, SyvernSettings())
+    violations = _evaluate_rules(text, SyvernSettings())
     assert any(v.rule == "no_enumeration_gaming" for v in violations)
 
 
@@ -119,7 +129,7 @@ def test_pipeline_vetoes_enumeration_style_output():
 
 
 def test_minimum_element_signal_is_reported_as_anti_gaming_warning():
-    violations = evaluate_rules("comment only enough tokens", SyvernSettings())
+    violations = _evaluate_rules("comment only enough tokens", SyvernSettings())
 
     assert any(
         v.rule == "minimum_element_signal"
@@ -129,11 +139,22 @@ def test_minimum_element_signal_is_reported_as_anti_gaming_warning():
     )
 
 
+def test_rules_use_supplied_elements_for_minimum_element_signal():
+    violations = evaluate_rules(
+        "plain words enough tokens",
+        [ElementSummary(type="part", qualified_name="vehicle.engine")],
+        SyvernSettings(),
+    )
+    assert "minimum_element_signal" not in {violation.rule for violation in violations}
+
+
 def test_veto_triggers_for_error_anti_gaming_rule():
     settings = SyvernSettings()
-    violations = evaluate_rules("filler filler filler", settings)
+    text = "filler filler filler"
+    violations = _evaluate_rules(text, settings)
     veto = evaluate_veto(
-        text="filler filler filler",
+        text=text,
+        elements=_elements(text),
         settings=settings,
         semantic_path_passed=True,
         parser_agreement=True,
@@ -144,8 +165,10 @@ def test_veto_triggers_for_error_anti_gaming_rule():
 
 
 def test_veto_ignores_unknown_parser_agreement():
+    text = "part A attribute x"
     veto = evaluate_veto(
-        text="part A attribute x",
+        text=text,
+        elements=_elements(text),
         settings=SyvernSettings(),
         semantic_path_passed=True,
         parser_agreement=None,
@@ -154,6 +177,18 @@ def test_veto_ignores_unknown_parser_agreement():
 
     assert veto.triggered is False
     assert veto.reason is None
+
+
+def test_veto_uses_supplied_elements_for_degenerate_element_check():
+    veto = evaluate_veto(
+        text="plain words enough tokens",
+        elements=[ElementSummary(type="part", qualified_name="vehicle.engine")],
+        settings=SyvernSettings(),
+        semantic_path_passed=True,
+        parser_agreement=True,
+        violations=[],
+    )
+    assert veto.triggered is False
 
 
 def test_reward_is_zero_when_veto_triggers():
