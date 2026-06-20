@@ -266,7 +266,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             def validate_sample(sample):
                 return pipeline.validate(sample.sysml_text, mode="data_filter")
 
-            result = run_sft_prepare(
+            prepare_result = run_sft_prepare(
                 args.input,
                 args.output_dir,
                 validator=validate_sample,
@@ -275,7 +275,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 coverage_backend=args.coverage_backend,
                 min_coverage=args.min_coverage,
             )
-            print(json.dumps(result.summary, sort_keys=True))
+            print(json.dumps(prepare_result.summary, sort_keys=True))
             return 0
     raise AssertionError(f"unhandled command {args.command}")
 

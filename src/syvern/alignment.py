@@ -85,25 +85,36 @@ def load_alignment_cases(path: str | Path) -> list[AlignmentCase]:
 
 
 def _alignment_case_from_payload(payload: dict[str, object]) -> AlignmentCase:
+    case_id = str(payload["case_id"])
+    text = str(payload["text"])
     parse_ok = bool(payload["parse_ok"])
-    base = {
-        "case_id": str(payload["case_id"]),
-        "text": str(payload["text"]),
-        "parse_ok": parse_ok,
-        "category": str(payload.get("category", "unspecified")).strip() or "unspecified",
-        "expected_elements": _parse_expected_elements(payload.get("expected_elements")),
-    }
+    category = str(payload.get("category", "unspecified")).strip() or "unspecified"
+    expected_elements = _parse_expected_elements(payload.get("expected_elements"))
     if "unresolved_refs" in payload or "type_errors" in payload:
         return AlignmentCase(
-            **base,
-            unresolved_refs=int(payload["unresolved_refs"]),
-            type_errors=int(payload["type_errors"]),
+            case_id=case_id,
+            text=text,
+            parse_ok=parse_ok,
+            category=category,
+            expected_elements=expected_elements,
+            unresolved_refs=_as_int(payload["unresolved_refs"]),
+            type_errors=_as_int(payload["type_errors"]),
         )
     return AlignmentCase(
-        **base,
+        case_id=case_id,
+        text=text,
+        parse_ok=parse_ok,
+        category=category,
+        expected_elements=expected_elements,
         resolve_ok=_optional_bool(payload["resolve_ok"]),
         typecheck_ok=_optional_bool(payload["typecheck_ok"]),
     )
+
+
+def _as_int(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ValueError(f"expected an int-like value, got {value!r}")
+    return int(value)
 
 
 def _optional_bool(value: object) -> bool | None:
@@ -207,19 +218,19 @@ def run_adapter_alignment(
 
         if case.expected_elements is not None:
             element_labelled += 1
-            expected = Counter(case.expected_elements)
-            actual = Counter(
+            expected_elements_counter = Counter(case.expected_elements)
+            actual_elements_counter = Counter(
                 (element.type, element.qualified_name) for element in parse_result.element_summary
             )
-            if expected == actual:
+            if expected_elements_counter == actual_elements_counter:
                 element_matches += 1
             else:
                 case_failures.append(
                     AlignmentFailure(
                         case.case_id,
                         "elements",
-                        str(sorted(expected.elements())),
-                        str(sorted(actual.elements())),
+                        str(sorted(expected_elements_counter.elements())),
+                        str(sorted(actual_elements_counter.elements())),
                     )
                 )
 

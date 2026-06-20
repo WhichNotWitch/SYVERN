@@ -7,7 +7,9 @@ from typing import Any, Iterable, Mapping
 
 
 def dataclass_to_dict(value: Any) -> Any:
-    return asdict(value) if is_dataclass(value) else value
+    if is_dataclass(value) and not isinstance(value, type):
+        return asdict(value)
+    return value
 
 
 def write_jsonl(path: str | Path, records: Iterable[Mapping[str, Any]]) -> None:
