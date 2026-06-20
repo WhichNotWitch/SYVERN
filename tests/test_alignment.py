@@ -70,6 +70,111 @@ def test_run_adapter_alignment_reports_stage_accuracy_and_failures():
     assert summary.failures[0].actual == "1"
 
 
+CORPUS = Path(__file__).resolve().parents[1] / "data" / "alignment" / "pilot_corpus.jsonl"
+
+
+def test_element_accuracy_counts_only_labelled_cases():
+    cases = [
+        AlignmentCase(
+            case_id="labelled",
+            text="part vehicle.engine attribute vehicle.mass",
+            parse_ok=True,
+            unresolved_refs=0,
+            type_errors=0,
+            category="valid",
+            expected_elements=(("part", "vehicle.engine"), ("attribute", "vehicle.mass")),
+        ),
+        AlignmentCase(
+            case_id="unlabelled",
+            text="part vehicle.body",
+            parse_ok=True,
+            unresolved_refs=0,
+            type_errors=0,
+            category="valid",
+        ),
+    ]
+
+    summary = run_adapter_alignment(PilotStubAdapter(), cases)
+
+    assert summary.element_labelled == 1
+    assert summary.element_accuracy == 1.0
+
+
+def test_element_mismatch_is_reported_and_lowers_overall():
+    cases = [
+        AlignmentCase(
+            case_id="wrong-elements",
+            text="part vehicle.engine",
+            parse_ok=True,
+            unresolved_refs=0,
+            type_errors=0,
+            category="valid",
+            expected_elements=(("part", "vehicle.gearbox"),),
+        )
+    ]
+
+    summary = run_adapter_alignment(PilotStubAdapter(), cases)
+
+    assert summary.element_accuracy == 0.0
+    assert summary.overall_accuracy == 0.0
+    assert [f.stage for f in summary.failures] == ["elements"]
+
+
+def test_pilot_corpus_meets_acceptance_gate():
+    cases = load_alignment_cases(CORPUS)
+
+    assert len(cases) >= 50
+    assert {case.category for case in cases} == {
+        "valid",
+        "syntax_error",
+        "unresolved_ref",
+        "type_error",
+        "nested_scale",
+    }
+    assert all(case.expected_elements is not None for case in cases)
+
+    summary = run_adapter_alignment(PilotStubAdapter(), cases)
+
+    assert summary.element_labelled == len(cases)
+    assert summary.parse_accuracy == 1.0
+    assert summary.resolve_accuracy == 1.0
+    assert summary.typecheck_accuracy == 1.0
+    assert summary.element_accuracy == 1.0
+    assert summary.overall_accuracy == 1.0
+
+
+REAL_CORPUS = Path(__file__).resolve().parents[1] / "data" / "alignment" / "pilot_real_corpus.jsonl"
+
+
+def test_real_corpus_is_well_formed_for_the_real_adapter():
+    # This corpus is CALIBRATED against the real Pilot 0.59.0 (labels = real Pilot
+    # output) for `--adapter pilot`. It is NOT run against the stub here; we only
+    # assert structure, labels, and that the content is genuinely SysML v2.
+    cases = load_alignment_cases(REAL_CORPUS)
+
+    assert len(cases) >= 40
+    assert {case.category for case in cases} == {
+        "valid",
+        "syntax_error",
+        "unresolved_ref",
+        "type_error",
+        "behavior",
+    }
+    assert all(case.expected_elements is not None for case in cases)
+    # genuine SysML v2 syntax with real `::` qualified names
+    assert all("part def" in case.text or "package" in case.text for case in cases)
+    assert any("::" in element[1] for case in cases for element in case.expected_elements)
+    for case in cases:
+        if case.category == "syntax_error":
+            assert case.parse_ok is False
+        if case.category == "valid":
+            assert case.parse_ok is True and case.unresolved_refs == 0 and case.type_errors == 0
+        if case.category == "unresolved_ref":
+            assert case.parse_ok is True and case.unresolved_refs >= 1
+        if case.category == "type_error":
+            assert case.parse_ok is True and case.type_errors >= 1
+
+
 def test_load_alignment_cases_defaults_missing_category_to_unspecified(tmp_path):
     dataset = tmp_path / "alignment.jsonl"
     dataset.write_text(

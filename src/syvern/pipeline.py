@@ -44,10 +44,15 @@ class ValidationPipeline:
         formal_adapter: Any | None = None,
         intent_judge: Any | None = None,
         structural_matcher: Any | None = None,
+        authoritative_adapter: Any | None = None,
     ) -> None:
         self.settings = settings or SyvernSettings()
         self.pilot = pilot_adapter or PilotStubAdapter()
         self.monticore = monticore_adapter or MontiCoreStubAdapter()
+        # Optional authoritative L0 used only for `full` mode (e.g. real Pilot),
+        # running in parallel with a fast in-process primary (e.g. subset) for
+        # the high-throughput online path. None => primary is used everywhere.
+        self.authoritative = authoritative_adapter
         self.formal_adapter = formal_adapter
         self.intent_judge = intent_judge
         self.structural_matcher = structural_matcher
@@ -64,7 +69,8 @@ class ValidationPipeline:
     ) -> ValidateResponse:
         started = time.perf_counter()
 
-        parse_result = self.pilot.parse(text)
+        adapter = self._adapter_for(mode)
+        parse_result = adapter.parse(text)
         parser_agreement: bool | None = None
         if mode == "full":
             parser_agreement = self._parser_agrees(text, parse_result)
@@ -86,6 +92,7 @@ class ValidationPipeline:
             return self._finish(
                 text=text,
                 elements=parse_result.element_summary,
+                adapter=adapter,
                 mode=mode,
                 stage=stage,
                 started=started,
@@ -95,7 +102,7 @@ class ValidationPipeline:
                 formal_properties=formal_properties,
             )
 
-        resolve_result = self.pilot.resolve(text)
+        resolve_result = adapter.resolve(text)
         resolve = ResolveStage(
             reached=True,
             ok=resolve_result.ok,
@@ -113,6 +120,7 @@ class ValidationPipeline:
             return self._finish(
                 text=text,
                 elements=parse_result.element_summary,
+                adapter=adapter,
                 mode=mode,
                 stage=stage,
                 started=started,
@@ -122,7 +130,7 @@ class ValidationPipeline:
                 formal_properties=formal_properties,
             )
 
-        typecheck_result = self.pilot.typecheck(text)
+        typecheck_result = adapter.typecheck(text)
         typecheck = TypecheckStage(
             reached=True,
             ok=typecheck_result.ok,
@@ -137,6 +145,7 @@ class ValidationPipeline:
         return self._finish(
             text=text,
             elements=parse_result.element_summary,
+            adapter=adapter,
             mode=mode,
             stage=stage,
             started=started,
@@ -186,6 +195,7 @@ class ValidationPipeline:
         *,
         text: str,
         elements: list[ElementSummary],
+        adapter: Any,
         mode: Mode,
         stage: StageSummary,
         started: float,
@@ -242,7 +252,7 @@ class ValidationPipeline:
                 ipt_consistent=evaluate_ipt(
                     original_elements=elements,
                     perturbation_element_sets=[
-                        self._elements(perturbation) for perturbation in perturbations
+                        adapter.parse(perturbation).element_summary for perturbation in perturbations
                     ],
                     settings=self.settings,
                 )
@@ -305,8 +315,10 @@ class ValidationPipeline:
         self._apply_data_filter_decision(response)
         return response
 
-    def _elements(self, text: str) -> list[ElementSummary]:
-        return self.pilot.parse(text).element_summary
+    def _adapter_for(self, mode: Mode) -> Any:
+        if mode == "full" and self.authoritative is not None:
+            return self.authoritative
+        return self.pilot
 
     def _parser_agrees(self, text: str, parse_result: ParseResult) -> bool:
         monticore_result = self.monticore.parse(text)

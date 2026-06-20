@@ -6,18 +6,35 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Sequence
 
+from syvern.adapters.base import ValidatorAdapter
+from syvern.adapters.pilot import PilotAdapter
 from syvern.adapters.stub import MontiCoreStubAdapter, PilotStubAdapter
-from syvern.alignment import AlignmentSummary, load_alignment_cases, run_adapter_alignment
+from syvern.adapters.subset import SubsetPilotAdapter
+from syvern.alignment import (
+    AlignmentSummary,
+    calibrated_case_payloads,
+    load_alignment_cases,
+    run_adapter_alignment,
+)
 from syvern.benchmark import OnlineRewardBenchmarkSummary, benchmark_online_reward
 from syvern.pipeline_factory import build_validation_pipeline
 from syvern.settings import load_settings_from_env
 
 
-def _adapter(name: str) -> PilotStubAdapter | MontiCoreStubAdapter:
+def _adapter(name: str) -> ValidatorAdapter:
     if name == "pilot-stub":
         return PilotStubAdapter()
     if name == "monticore-stub":
         return MontiCoreStubAdapter()
+    if name == "subset":
+        return SubsetPilotAdapter()
+    if name == "pilot":
+        settings = load_settings_from_env()
+        if not settings.pilot_endpoint:
+            raise SystemExit(
+                "align --adapter pilot requires SYVERN_PILOT_ENDPOINT to point at a running Pilot service"
+            )
+        return PilotAdapter(settings.pilot_endpoint, settings.pilot_version, settings.pilot_timeout_s)
     raise ValueError(f"unsupported adapter {name}")
 
 
@@ -32,6 +49,7 @@ def _alignment_passes(
     min_parse: float,
     min_resolve: float,
     min_typecheck: float,
+    min_element: float,
     min_cases: int,
     required_categories: Sequence[str],
 ) -> bool:
@@ -41,6 +59,7 @@ def _alignment_passes(
         and summary.parse_accuracy >= min_parse
         and summary.resolve_accuracy >= min_resolve
         and summary.typecheck_accuracy >= min_typecheck
+        and summary.element_accuracy >= min_element
         and all(summary.category_counts.get(category, 0) > 0 for category in required_categories)
     )
 
@@ -62,6 +81,15 @@ def _benchmark_passes(
     return True
 
 
+def _write_calibrated(path: str, payloads: list[dict[str, object]]) -> None:
+    with Path(path).open("w", encoding="utf-8") as handle:
+        handle.write(
+            "# Calibrated alignment corpus emitted from adapter actual output. Review before adopting.\n"
+        )
+        for payload in payloads:
+            handle.write(json.dumps(payload, sort_keys=True) + "\n")
+
+
 def _load_benchmark_samples(path: str) -> list[str]:
     samples = [line.strip() for line in Path(path).read_text(encoding="utf-8").splitlines()]
     return [sample for sample in samples if sample]
@@ -72,14 +100,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     align = subparsers.add_parser("align", help="run an adapter alignment dataset")
-    align.add_argument("--adapter", choices=["pilot-stub", "monticore-stub"], required=True)
+    align.add_argument(
+        "--adapter", choices=["pilot-stub", "monticore-stub", "subset", "pilot"], required=True
+    )
     align.add_argument("--dataset", required=True)
     align.add_argument("--min-overall", type=float, default=1.0)
     align.add_argument("--min-parse", type=float, default=0.0)
     align.add_argument("--min-resolve", type=float, default=0.0)
     align.add_argument("--min-typecheck", type=float, default=0.0)
+    align.add_argument("--min-element-accuracy", type=float, default=0.0)
     align.add_argument("--min-cases", type=int, default=1)
     align.add_argument("--require-category", action="append", default=[])
+    align.add_argument(
+        "--emit-calibrated",
+        default=None,
+        help="write a candidate corpus from the adapter's actual output (calibration), then exit 0",
+    )
 
     benchmark = subparsers.add_parser("benchmark", help="run an online_reward latency benchmark")
     benchmark.add_argument("--samples", required=True)
@@ -89,8 +125,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "align":
         cases = load_alignment_cases(args.dataset)
-        alignment_summary = run_adapter_alignment(_adapter(args.adapter), cases)
+        adapter = _adapter(args.adapter)
+        alignment_summary = run_adapter_alignment(adapter, cases)
         print(json.dumps(_alignment_payload(alignment_summary), sort_keys=True))
+        if args.emit_calibrated:
+            _write_calibrated(args.emit_calibrated, calibrated_case_payloads(adapter, cases))
+            return 0
         return (
             0
             if _alignment_passes(
@@ -99,6 +139,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 min_parse=args.min_parse,
                 min_resolve=args.min_resolve,
                 min_typecheck=args.min_typecheck,
+                min_element=args.min_element_accuracy,
                 min_cases=args.min_cases,
                 required_categories=args.require_category,
             )

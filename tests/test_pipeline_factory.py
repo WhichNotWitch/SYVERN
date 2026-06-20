@@ -22,6 +22,34 @@ def test_build_validation_pipeline_uses_stub_adapters_by_default():
     assert pipeline.structural_matcher is None
 
 
+def test_build_validation_pipeline_uses_subset_parser_when_enabled():
+    from syvern.adapters.subset import SubsetPilotAdapter
+
+    pipeline = build_validation_pipeline(SyvernSettings(use_subset_parser=True))
+
+    assert isinstance(pipeline.pilot, SubsetPilotAdapter)
+    assert pipeline.authoritative is None
+
+
+def test_subset_primary_runs_in_parallel_with_authoritative_pilot():
+    from syvern.adapters.subset import SubsetPilotAdapter
+
+    pipeline = build_validation_pipeline(
+        SyvernSettings(pilot_backend="subset", pilot_endpoint="http://pilot.local")
+    )
+
+    # fast in-process subset is the primary (online); real Pilot is authoritative (full)
+    assert isinstance(pipeline.pilot, SubsetPilotAdapter)
+    assert isinstance(pipeline.authoritative, PilotAdapter)
+
+
+def test_explicit_pilot_backend_requires_endpoint():
+    import pytest
+
+    with pytest.raises(ValueError):
+        build_validation_pipeline(SyvernSettings(pilot_backend="pilot"))
+
+
 def test_build_validation_pipeline_wires_configured_http_adapters():
     settings = SyvernSettings(
         pilot_endpoint="http://pilot.local/api",

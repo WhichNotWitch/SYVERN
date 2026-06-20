@@ -1,0 +1,67 @@
+plugins {
+    id 'application'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'com.google.code.gson:gson:2.10.1'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+application {
+    // Seam: swap StubPilotBackend for RealPilotBackend once the Pilot is wired (see PilotServer).
+    mainClass = 'org.syvern.pilot.PilotServer'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.named('run') {
+    // PILOT_PORT / PILOT_THREADS are read from the environment; see README.
+    standardOutput = System.out
+}
+
+// --- Optional real Pilot backend (H7) -------------------------------------
+// The SysML v2 Pilot is NOT on Maven Central; the SysML v2 Jupyter kernel bundles
+// it in one fat jar (jupyter-sysml-kernel-<ver>-all.jar). Build the real backend
+// against that jar:
+//   gradle build -PwithPilot -PpilotJar=/path/to/jupyter-sysml-kernel-0.59.0-all.jar
+// Without -PwithPilot the default build only contains the deterministic stub.
+if (project.hasProperty('withPilot')) {
+    if (!project.hasProperty('pilotJar')) {
+        throw new GradleException(
+            "-PwithPilot also needs -PpilotJar=<path to jupyter-sysml-kernel-*-all.jar>")
+    }
+
+    sourceSets {
+        pilotReal {
+            java.srcDir 'src/pilotReal/java'
+        }
+    }
+
+    dependencies {
+        pilotRealImplementation sourceSets.main.output
+        pilotRealImplementation 'com.google.code.gson:gson:2.10.1'
+        pilotRealImplementation files(project.property('pilotJar'))
+    }
+
+    // Put the real backend on the run classpath; select it with PILOT_BACKEND=real.
+    tasks.named('run') {
+        classpath += sourceSets.pilotReal.output + configurations.pilotRealRuntimeClasspath
+    }
+}

@@ -6,6 +6,7 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 
+from syvern.adapters.pilot import PilotBackendError
 from syvern.audit import AuditEvent, AuditOutcome
 from syvern.cache import CacheKey
 from syvern.models import (
@@ -367,14 +368,22 @@ def _validate_with_cache(
         validation_records.add(make_validation_record(response, metadata=metadata))
         return response
 
-    response = pipeline.validate(
-        text,
-        mode=mode,
-        reference=reference,
-        perturbations=perturbations,
-        intent_reference=intent_reference,
-        formal_properties=formal_properties,
-    )
+    try:
+        response = pipeline.validate(
+            text,
+            mode=mode,
+            reference=reference,
+            perturbations=perturbations,
+            intent_reference=intent_reference,
+            formal_properties=formal_properties,
+        )
+    except PilotBackendError as exc:
+        # Backend unavailable is not a model failure: circuit-break with 503
+        # instead of recording a misleading reward-0 result.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"pilot backend unavailable: {exc}",
+        ) from exc
     payload = response.model_dump(mode="json")
     payload["meta"]["cache_hit"] = False
     validation_cache.set(key, payload)

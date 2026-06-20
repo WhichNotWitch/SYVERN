@@ -41,6 +41,23 @@ def test_health_endpoint():
     assert response.json() == {"status": "ok"}
 
 
+def test_validate_circuit_breaks_to_503_on_pilot_backend_error(monkeypatch):
+    from syvern.adapters.pilot import PilotBackendError
+
+    def boom(*args, **kwargs):
+        raise PilotBackendError("connection refused")
+
+    monkeypatch.setattr(api_module.pipeline, "validate", boom)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.post("/validate", json={"text": "part vehicle.engine", "mode": "online_reward"})
+
+    assert response.status_code == 503
+    assert "pilot backend unavailable" in response.json()["detail"]
+    # backend outage must not be recorded as a (reward-0) validation event
+    assert validation_records.list() == []
+
+
 def test_health_endpoint_remains_public_when_api_token_is_configured(monkeypatch):
     monkeypatch.setattr(api_module, "settings", SyvernSettings(api_token="secret-token"))
     client = TestClient(app)

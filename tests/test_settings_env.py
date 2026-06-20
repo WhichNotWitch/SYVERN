@@ -7,6 +7,19 @@ def test_load_settings_from_env_uses_defaults_for_empty_environment():
     assert load_settings_from_env({}) == SyvernSettings()
 
 
+def test_load_settings_from_env_reads_pilot_backend_and_subset_flag():
+    settings = load_settings_from_env(
+        {"SYVERN_PILOT_BACKEND": "subset", "SYVERN_USE_SUBSET_PARSER": "true"}
+    )
+    assert settings.pilot_backend == "subset"
+    assert settings.use_subset_parser is True
+
+
+def test_invalid_pilot_backend_is_rejected():
+    with pytest.raises(ValueError):
+        SyvernSettings(pilot_backend="bogus")  # type: ignore[arg-type]
+
+
 def test_load_settings_from_env_maps_production_configuration():
     settings = load_settings_from_env({
         "SYVERN_PILOT_ENDPOINT": "http://pilot.local/api",
