@@ -23,7 +23,13 @@ def evaluate_veto(
     if semantic_path_passed:
         if token_count(text) < settings.min_tokens:
             return VetoSummary(triggered=True, reason="degenerate_output")
-        if len(elements) < settings.min_elements:
-            return VetoSummary(triggered=True, reason="degenerate_output")
+        # NOTE (Bug2): we deliberately do NOT veto on an empty *curated* element
+        # set. `elements` is the structural-matching subset (part/attribute/…)
+        # and omits valid constructs like `metadata def`, `enum def`, and
+        # anonymous `action {}` bodies. A model that fully parses/resolves/
+        # typechecks against the standard library is non-degenerate by the
+        # authoritative L0's own verdict; the curated subset being empty is a
+        # scoping artifact, not evidence of emptiness. See
+        # doc/syvern_bug2_element_degeneracy_fix.md.
 
     return VetoSummary(triggered=False, reason=None)

@@ -72,15 +72,18 @@ def test_short_semantic_pass_triggers_degenerate_veto():
     assert response.meta.reward == 0.0
 
 
-def test_semantic_pass_with_too_few_elements_triggers_degenerate_veto():
+def test_semantic_pass_with_empty_curated_element_set_is_not_degenerate():
+    # Bug2: a model that fully passes the semantic path but extracts no element
+    # from the *curated* structural subset (e.g. metadata-only / behavioral-only
+    # models) must NOT be vetoed as degenerate.
     response = ValidationPipeline().validate("comment only enough tokens", mode="online_reward")
 
     assert response.stage.parse.ok is True
     assert response.stage.resolve.ok is True
     assert response.stage.typecheck.ok is True
-    assert response.veto.triggered is True
-    assert response.veto.reason == "degenerate_output"
-    assert response.meta.reward == 0.0
+    assert response.veto.triggered is False
+    assert response.meta.reward > 0.0
+    assert "minimum_element_signal" not in {v.rule for v in response.stage.constraint.violations}
 
 
 def test_filler_markers_trigger_anti_gaming_veto():

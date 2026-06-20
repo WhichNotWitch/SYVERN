@@ -17,6 +17,8 @@ from syvern.alignment import (
 from syvern.benchmark import OnlineRewardBenchmarkSummary, benchmark_online_reward
 from syvern.pipeline_factory import build_validation_pipeline
 from syvern.settings import load_settings_from_env
+from syvern.sft import SftFilterResult, run_sft_filter
+from dataclasses import replace
 
 
 def _adapter(name: str) -> ValidatorAdapter:
@@ -83,6 +85,25 @@ def _load_benchmark_samples(path: str) -> list[str]:
     return [sample for sample in samples if sample]
 
 
+def _filter_payload(result: SftFilterResult) -> dict:
+    s = result.summary
+    return {
+        "read": s.read,
+        "evaluated": s.evaluated,
+        "passed": s.passed,
+        "dropped": s.dropped,
+        "skipped": s.skipped,
+        "keep_ratio": s.keep_ratio,
+        "reason_counts": s.reason_counts,
+    }
+
+
+def _write_jsonl(path: str, records: list[dict]) -> None:
+    with Path(path).open("w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="syvern")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -107,6 +128,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     benchmark.add_argument("--samples", required=True)
     benchmark.add_argument("--max-average-latency-ms", type=float, default=None)
     benchmark.add_argument("--min-throughput-per-s", type=float, default=None)
+
+    sft = subparsers.add_parser("filter", help="filter an SFT JSONL corpus via the data_filter path")
+    sft.add_argument("--dataset", required=True, help="input JSONL; one record per line")
+    sft.add_argument("--text-field", default="text", help="record key holding the SysML v2 text")
+    sft.add_argument("--output", default=None, help="write kept (passing) records to this JSONL")
+    sft.add_argument("--rejected", default=None, help="write dropped/skipped records to this JSONL")
+    sft.add_argument(
+        "--min-reward",
+        type=float,
+        default=None,
+        help="override SYVERN_DATA_FILTER_MIN_REWARD for this run",
+    )
+    sft.add_argument(
+        "--min-keep-ratio",
+        type=float,
+        default=None,
+        help="exit non-zero if the kept fraction falls below this threshold",
+    )
 
     args = parser.parse_args(argv)
     if args.command == "align":
@@ -144,6 +183,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             else 1
         )
+    if args.command == "filter":
+        settings = load_settings_from_env()
+        if args.min_reward is not None:
+            settings = replace(settings, data_filter_min_reward=args.min_reward)
+        pipeline = build_validation_pipeline(settings)
+        lines = Path(args.dataset).read_text(encoding="utf-8").splitlines()
+        result = run_sft_filter(pipeline, lines, text_field=args.text_field)
+        if args.output is not None:
+            _write_jsonl(args.output, result.kept)
+        if args.rejected is not None:
+            _write_jsonl(args.rejected, result.rejected)
+        print(json.dumps(_filter_payload(result), sort_keys=True))
+        if args.min_keep_ratio is not None and result.summary.keep_ratio < args.min_keep_ratio:
+            return 1
+        return 0
     raise AssertionError(f"unhandled command {args.command}")
 
 

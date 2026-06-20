@@ -13,6 +13,18 @@ PLACEHOLDER_NAMES = {"foo", "bar", "baz", "example", "placeholder", "sample", "d
 PLACEHOLDER_NAME_RE = re.compile(r"^(item|element|thing|object|part)\d+$")
 NUMERIC_SUFFIX_RE = re.compile(r"\d+$")
 
+# Filler markers only count as gaming when they stand alone in model substance,
+# not as a segment of a qualified name (e.g. the SysML requirement status enum
+# value `StatusKind::tbd`) — the look-around rejects neighbouring `\w . :`.
+FILLER_MARKER_RE = re.compile(r"(?<![\w.:])(?:todo|tbd|filler|dummy)(?![\w.:])")
+# Comments and string/doc literals are documentation, not model substance, and
+# are stripped before the filler scan so legitimate prose does not veto a model.
+_COMMENT_OR_STRING_RE = re.compile(r'"(?:[^"\\]|\\.)*"|//[^\n]*|/\*.*?\*/', re.DOTALL)
+
+
+def strip_comments_and_strings(text: str) -> str:
+    return _COMMENT_OR_STRING_RE.sub(" ", text)
+
 
 def last_name_segment(qualified_name: str) -> str:
     return qualified_name.rsplit(".", 1)[-1]
@@ -31,7 +43,8 @@ def evaluate_rules(text: str, elements: list[ElementSummary], settings: SyvernSe
     normalized = normalize_ws(text).lower()
     violations: list[Violation] = []
 
-    if re.search(r"\b(todo|tbd|filler|dummy)\b", normalized) or "???" in normalized:
+    prose = normalize_ws(strip_comments_and_strings(text)).lower()
+    if FILLER_MARKER_RE.search(prose) or "???" in prose:
         violations.append(Violation(rule="no_filler_text", severity="error", category="anti_gaming"))
 
     words = normalized.split()
@@ -43,8 +56,12 @@ def evaluate_rules(text: str, elements: list[ElementSummary], settings: SyvernSe
     if 0 < len(words) < settings.min_tokens:
         violations.append(Violation(rule="minimum_model_signal", severity="warn", category="anti_gaming"))
 
-    if len(elements) < settings.min_elements:
-        violations.append(Violation(rule="minimum_element_signal", severity="warn", category="anti_gaming"))
+    # NOTE (Bug2): no `minimum_element_signal` rule. The curated element subset
+    # (part/attribute/…) omits valid constructs (`metadata def`, `enum def`,
+    # anonymous `action {}`), so an empty subset is not evidence of an
+    # element-poor model. Substance is signalled by tokens + the authoritative
+    # L0 verdict, not by this scoring subset. See
+    # doc/syvern_bug2_element_degeneracy_fix.md.
 
     if any(is_placeholder_name(element.qualified_name) for element in elements):
         violations.append(Violation(rule="no_placeholder_names", severity="error", category="anti_gaming"))

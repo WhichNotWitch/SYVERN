@@ -226,3 +226,105 @@ def test_benchmark_cli_returns_nonzero_when_throughput_threshold_fails(
     output = json.loads(capsys.readouterr().out)
     assert exit_code == 1
     assert output["throughput_per_s"] < 1000000000.0
+
+
+def _fake_pilot_urlopen_by_text(text_to_payload):
+    def fake_urlopen(request, timeout):
+        if request.full_url.endswith("/version"):
+            return _FakeResponse({"pilot_version": "realv"})
+        body = json.loads(request.data.decode("utf-8"))
+        return _FakeResponse(text_to_payload[body["text"]])
+
+    return fake_urlopen
+
+
+_T0_PASS = {
+    "parse": {"ok": True, "errors": []},
+    "resolve": {"ok": True, "unresolved_refs": 0, "errors": []},
+    "typecheck": {"ok": True, "type_errors": 0, "errors": []},
+    "elements": [{"type": "part", "qualified_name": "p::v"}],
+}
+_T0_PARSE_FAIL = {
+    "parse": {"ok": False, "errors": [{"code": "PILOT_SYNTAX_ERROR", "message": "boom"}]},
+    "resolve": {"ok": False, "unresolved_refs": 0, "errors": []},
+    "typecheck": {"ok": False, "type_errors": 0, "errors": []},
+    "elements": [],
+}
+
+
+def test_filter_cli_partitions_corpus_and_writes_outputs(monkeypatch, tmp_path, capsys):
+    good = "part def Good { part v; }"
+    bad = "part def Bad {"
+    monkeypatch.setattr(
+        "syvern.adapters.pilot.urlopen",
+        _fake_pilot_urlopen_by_text({good: _T0_PASS, bad: _T0_PARSE_FAIL}),
+    )
+
+    dataset = tmp_path / "corpus.jsonl"
+    dataset.write_text(
+        "\n".join(
+            [
+                json.dumps({"id": "a", "text": good}),
+                "",  # blank lines are ignored
+                json.dumps({"id": "b", "text": bad}),
+                json.dumps({"id": "c"}),  # missing text -> skipped
+                "{not json",  # malformed -> skipped
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    kept = tmp_path / "kept.jsonl"
+    rejected = tmp_path / "rejected.jsonl"
+
+    exit_code = main(
+        [
+            "filter",
+            "--dataset",
+            str(dataset),
+            "--output",
+            str(kept),
+            "--rejected",
+            str(rejected),
+        ]
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert output["read"] == 4
+    assert output["evaluated"] == 2
+    assert output["passed"] == 1
+    assert output["dropped"] == 1
+    assert output["skipped"] == 2
+    assert output["reason_counts"]["passed"] == 1
+    assert output["reason_counts"]["t0_failed"] == 1
+    assert output["reason_counts"]["missing_text"] == 1
+    assert output["reason_counts"]["malformed_input"] == 1
+
+    kept_records = [json.loads(line) for line in kept.read_text(encoding="utf-8").splitlines()]
+    assert [r["id"] for r in kept_records] == ["a"]
+    assert kept_records[0]["_syvern"]["pass"] is True
+    assert kept_records[0]["_syvern"]["reason"] == "passed"
+
+    rejected_ids = {
+        json.loads(line).get("id") for line in rejected.read_text(encoding="utf-8").splitlines()
+    }
+    assert "b" in rejected_ids and "c" in rejected_ids
+
+
+def test_filter_cli_min_keep_ratio_gate_fails(monkeypatch, tmp_path, capsys):
+    bad = "part def Bad {"
+    monkeypatch.setattr(
+        "syvern.adapters.pilot.urlopen",
+        _fake_pilot_urlopen_by_text({bad: _T0_PARSE_FAIL}),
+    )
+    dataset = tmp_path / "corpus.jsonl"
+    dataset.write_text(json.dumps({"id": "b", "text": bad}) + "\n", encoding="utf-8")
+
+    exit_code = main(
+        ["filter", "--dataset", str(dataset), "--min-keep-ratio", "0.5"]
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert output["keep_ratio"] == 0.0

@@ -3,7 +3,6 @@ from typing import Literal
 from syvern.adapters.stub import MontiCoreStubAdapter, PilotStubAdapter, extract_element_summary
 from syvern.models import (
     ConstraintStage,
-    ElementSummary,
     IntentSummary,
     MonitorSummary,
     ParseStage,
@@ -98,6 +97,29 @@ def test_filler_marker_rules_include_h1_spec_markers():
         assert any(v.rule == "no_filler_text" for v in violations)
 
 
+def test_filler_marker_in_qualified_name_is_not_gaming():
+    # `StatusKind::tbd` is a legitimate SysML enum value, not filler text.
+    violations = _evaluate_rules("part A attribute status = StatusKind::tbd", SyvernSettings())
+    assert not any(v.rule == "no_filler_text" for v in violations)
+
+
+def test_filler_marker_in_comment_is_not_gaming():
+    text = "part A attribute x // StatusKind has values for open, closed, tbd, tbr"
+    violations = _evaluate_rules(text, SyvernSettings())
+    assert not any(v.rule == "no_filler_text" for v in violations)
+
+
+def test_filler_marker_in_block_comment_and_string_is_not_gaming():
+    text = 'part A /* todo: revisit */ attribute label = "fill in ??? later"'
+    violations = _evaluate_rules(text, SyvernSettings())
+    assert not any(v.rule == "no_filler_text" for v in violations)
+
+
+def test_standalone_filler_marker_still_flags_in_model_substance():
+    violations = _evaluate_rules("part A tbd attribute x", SyvernSettings())
+    assert any(v.rule == "no_filler_text" for v in violations)
+
+
 def test_repetition_rule_applies_below_min_tokens():
     violations = _evaluate_rules("x x", SyvernSettings())
     rules = {v.rule for v in violations}
@@ -128,24 +150,11 @@ def test_pipeline_vetoes_enumeration_style_output():
     assert any(v.rule == "no_enumeration_gaming" for v in response.stage.constraint.violations)
 
 
-def test_minimum_element_signal_is_reported_as_anti_gaming_warning():
+def test_empty_curated_element_set_does_not_produce_element_signal_violation():
+    # Bug2: 0 curated elements is not an anti-gaming signal — valid metadata-only
+    # / behavioral-only models legitimately extract no element from the subset.
     violations = _evaluate_rules("comment only enough tokens", SyvernSettings())
-
-    assert any(
-        v.rule == "minimum_element_signal"
-        and v.severity == "warn"
-        and v.category == "anti_gaming"
-        for v in violations
-    )
-
-
-def test_rules_use_supplied_elements_for_minimum_element_signal():
-    violations = evaluate_rules(
-        "plain words enough tokens",
-        [ElementSummary(type="part", qualified_name="vehicle.engine")],
-        SyvernSettings(),
-    )
-    assert "minimum_element_signal" not in {violation.rule for violation in violations}
+    assert "minimum_element_signal" not in {v.rule for v in violations}
 
 
 def test_veto_triggers_for_error_anti_gaming_rule():
@@ -179,16 +188,34 @@ def test_veto_ignores_unknown_parser_agreement():
     assert veto.reason is None
 
 
-def test_veto_uses_supplied_elements_for_degenerate_element_check():
+def test_semantic_pass_with_empty_curated_element_set_is_not_vetoed():
+    # Bug2: enough tokens + full semantic path, but 0 curated elements (e.g. a
+    # metadata-only or behavioral-only model) must NOT trigger degenerate_output.
     veto = evaluate_veto(
-        text="plain words enough tokens",
-        elements=[ElementSummary(type="part", qualified_name="vehicle.engine")],
+        text="plain words with enough tokens but no curated elements",
+        elements=[],
         settings=SyvernSettings(),
         semantic_path_passed=True,
         parser_agreement=True,
         violations=[],
     )
     assert veto.triggered is False
+    assert veto.reason is None
+
+
+def test_token_trivial_semantic_pass_still_triggers_degenerate_veto():
+    # The token-based degeneracy guard remains: genuinely trivial output is
+    # still vetoed even when it slips through the semantic path.
+    veto = evaluate_veto(
+        text="x",
+        elements=[],
+        settings=SyvernSettings(),
+        semantic_path_passed=True,
+        parser_agreement=True,
+        violations=[],
+    )
+    assert veto.triggered is True
+    assert veto.reason == "degenerate_output"
 
 
 def test_reward_is_zero_when_veto_triggers():
