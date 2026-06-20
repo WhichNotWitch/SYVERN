@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Sequence
 
+from syvern.coverage.simple import SimpleCoverageEvaluator
 from syvern.adapters.base import ValidatorAdapter
 from syvern.adapters.pilot import PilotAdapter
 from syvern.alignment import (
@@ -18,7 +19,9 @@ from syvern.benchmark import OnlineRewardBenchmarkSummary, benchmark_online_rewa
 from syvern.pipeline_factory import build_validation_pipeline
 from syvern.settings import load_settings_from_env
 from syvern.sft import SftFilterResult, run_sft_filter
-from dataclasses import replace
+from syvern.sft.exporter import dataclass_to_dict
+from syvern.sft.loader import load_sft_samples
+from syvern.sft.pipeline import run_sft_prepare
 
 
 def _adapter(name: str) -> ValidatorAdapter:
@@ -104,6 +107,34 @@ def _write_jsonl(path: str, records: list[dict]) -> None:
             handle.write(json.dumps(record, sort_keys=True) + "\n")
 
 
+def _write_coverage_jsonl(
+    *,
+    input_path: str,
+    output_path: str,
+    requirement_field: str,
+    sysml_field: str,
+    min_coverage: float,
+) -> None:
+    evaluator = SimpleCoverageEvaluator(min_coverage=min_coverage)
+    samples = load_sft_samples(
+        input_path,
+        requirement_field=requirement_field,
+        sysml_field=sysml_field,
+    )
+    rows = [
+        dataclass_to_dict(
+            evaluator.evaluate(
+                sample.requirement_text,
+                sample.sysml_text,
+                sample_id=sample.sample_id,
+                metadata=sample.metadata,
+            )
+        )
+        for sample in samples
+    ]
+    _write_jsonl(output_path, rows)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="syvern")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -146,6 +177,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="exit non-zero if the kept fraction falls below this threshold",
     )
+
+    coverage = subparsers.add_parser("coverage", help="coverage utilities")
+    coverage_subparsers = coverage.add_subparsers(dest="coverage_command", required=True)
+    coverage_simple = coverage_subparsers.add_parser("simple", help="run simple requirement coverage")
+    coverage_simple.add_argument("--input", required=True)
+    coverage_simple.add_argument("--output", required=True)
+    coverage_simple.add_argument("--requirement-field", default="input")
+    coverage_simple.add_argument("--sysml-field", default="output")
+    coverage_simple.add_argument("--min-coverage", type=float, default=0.6)
+
+    sft_group = subparsers.add_parser("sft", help="SFT data preparation")
+    sft_subparsers = sft_group.add_subparsers(dest="sft_command", required=True)
+    sft_prepare = sft_subparsers.add_parser("prepare", help="validate, cover, and split SFT candidates")
+    sft_prepare.add_argument("--input", required=True)
+    sft_prepare.add_argument("--output-dir", required=True)
+    sft_prepare.add_argument("--requirement-field", default="input")
+    sft_prepare.add_argument("--sysml-field", default="output")
+    sft_prepare.add_argument("--coverage-backend", choices=["simple", "none"], default="simple")
+    sft_prepare.add_argument("--min-coverage", type=float, default=0.6)
 
     args = parser.parse_args(argv)
     if args.command == "align":
@@ -198,6 +248,35 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.min_keep_ratio is not None and result.summary.keep_ratio < args.min_keep_ratio:
             return 1
         return 0
+    if args.command == "coverage":
+        if args.coverage_command == "simple":
+            _write_coverage_jsonl(
+                input_path=args.input,
+                output_path=args.output,
+                requirement_field=args.requirement_field,
+                sysml_field=args.sysml_field,
+                min_coverage=args.min_coverage,
+            )
+            return 0
+    if args.command == "sft":
+        if args.sft_command == "prepare":
+            settings = load_settings_from_env()
+            pipeline = build_validation_pipeline(settings)
+
+            def validate_sample(sample):
+                return pipeline.validate(sample.sysml_text, mode="data_filter")
+
+            result = run_sft_prepare(
+                args.input,
+                args.output_dir,
+                validator=validate_sample,
+                requirement_field=args.requirement_field,
+                sysml_field=args.sysml_field,
+                coverage_backend=args.coverage_backend,
+                min_coverage=args.min_coverage,
+            )
+            print(json.dumps(result.summary, sort_keys=True))
+            return 0
     raise AssertionError(f"unhandled command {args.command}")
 
 

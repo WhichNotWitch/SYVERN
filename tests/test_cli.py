@@ -328,3 +328,91 @@ def test_filter_cli_min_keep_ratio_gate_fails(monkeypatch, tmp_path, capsys):
     output = json.loads(capsys.readouterr().out)
     assert exit_code == 1
     assert output["keep_ratio"] == 0.0
+
+
+def test_coverage_simple_cli_writes_coverage_jsonl(tmp_path):
+    dataset = tmp_path / "candidates.jsonl"
+    dataset.write_text(
+        json.dumps(
+            {
+                "id": "train_001",
+                "input": "ObstacleDetected shall trigger EmergencyStopping.",
+                "output": "state def Train { accept ObstacleDetected; state EmergencyStopping; }",
+                "coverage_spec": {"required": ["ObstacleDetected", "EmergencyStopping"]},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "coverage.jsonl"
+
+    exit_code = main(
+        [
+            "coverage",
+            "simple",
+            "--input",
+            str(dataset),
+            "--output",
+            str(output),
+            "--min-coverage",
+            "0.6",
+        ]
+    )
+
+    rows = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+    assert exit_code == 0
+    assert rows[0]["sample_id"] == "train_001"
+    assert rows[0]["score"] == 1.0
+    assert rows[0]["passed"] is True
+
+
+def test_sft_prepare_cli_can_run_without_coverage(monkeypatch, tmp_path, capsys):
+    dataset = tmp_path / "candidates.jsonl"
+    dataset.write_text(
+        json.dumps(
+            {
+                "id": "train_001",
+                "input": "Describe a part.",
+                "output": "package Train001 { part def Train; }",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "processed"
+
+    class _Validation:
+        stage = type(
+            "Stage",
+            (),
+            {
+                "parse": type("StageOk", (), {"ok": True})(),
+                "resolve": type("StageOk", (), {"ok": True})(),
+                "typecheck": type("StageOk", (), {"ok": True})(),
+            },
+        )()
+        veto = type("Veto", (), {"triggered": False})()
+
+    class _Pipeline:
+        def validate(self, text, mode="data_filter"):
+            return _Validation()
+
+    monkeypatch.setattr("syvern.cli.build_validation_pipeline", lambda settings: _Pipeline())
+
+    exit_code = main(
+        [
+            "sft",
+            "prepare",
+            "--input",
+            str(dataset),
+            "--output-dir",
+            str(output_dir),
+            "--coverage-backend",
+            "none",
+        ]
+    )
+
+    summary = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert summary["kept"] == 1
+    assert (output_dir / "kept.jsonl").exists()

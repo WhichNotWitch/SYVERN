@@ -1,16 +1,4 @@
-"""Offline SFT dataset filtering on top of the ``data_filter`` pipeline mode.
-
-Reads a JSONL corpus of candidate SysML v2 generations, runs each through the
-deterministic T0 validation path (``mode="data_filter"``), and partitions the
-records into *kept* (``data_filter_pass``) and *rejected*. Each emitted record
-carries a ``_syvern`` annotation (reward, decision, reason, fingerprint) so the
-decision is auditable and reproducible downstream.
-
-Throughput note: this is an offline batch path, so the single-instance Pilot
-serial ceiling is not a concern here (see memory ``syvern-pilot-throughput``).
-A backend outage raises :class:`PilotBackendError` and aborts the whole run
-rather than mislabelling every record as dropped.
-"""
+"""Legacy SFT data-filter wrapper kept for the existing ``syvern filter`` CLI."""
 from __future__ import annotations
 
 import json
@@ -19,7 +7,6 @@ from typing import Any, Iterable
 
 from syvern.pipeline import ValidationPipeline
 
-# Reasons assigned before a record ever reaches the pipeline.
 REASON_MALFORMED = "malformed_input"
 REASON_MISSING_TEXT = "missing_text"
 

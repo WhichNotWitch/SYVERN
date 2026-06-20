@@ -136,6 +136,34 @@ syvern align --adapter pilot --dataset data/alignment/pilot_real_corpus.jsonl --
 syvern align --adapter pilot --dataset data/alignment/pilot_real_corpus.jsonl --emit-calibrated data/alignment/pilot_real_calibrated.jsonl
 ```
 
+## SFT Preparation And Coverage
+
+SFT data processing is separated from validation/reward. The current lightweight
+coverage backend lives under `syvern.coverage` and returns a unified
+`CoverageReport`; the SFT policy in `syvern.sft` consumes only validation stage
+results plus that report.
+
+Run simple requirement coverage:
+
+```powershell
+python -m syvern.cli coverage simple `
+  --input data\sft\seed.jsonl `
+  --output data\sft\reports\seed_coverage_simple.jsonl `
+  --min-coverage 0.6
+```
+
+Prepare SFT data with Pilot validation and simple coverage:
+
+```powershell
+python -m syvern.cli sft prepare `
+  --input data\sft\seed.jsonl `
+  --output-dir data\sft\interim\seed_sft_simple_coverage `
+  --coverage-backend simple `
+  --min-coverage 0.6
+```
+
+Use `--coverage-backend none` for validation-only SFT filtering.
+
 ### Pinned Phase 1 alignment fingerprint
 
 Phase 1 manual alignment data is pinned to the real Pilot 0.59.0 service and

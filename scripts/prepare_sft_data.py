@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from syvern.sft_dataset import SourceSpec, build_sft_candidates, coverage_counts, write_jsonl
+from syvern.sft.dataset import SourceSpec, build_sft_candidates, coverage_counts, write_jsonl
 
 
 def _git_commit(root: Path) -> str:

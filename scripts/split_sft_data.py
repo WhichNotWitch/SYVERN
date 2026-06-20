@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from syvern.sft_dataset import coverage_counts, dedupe_by_output, split_by_source_file, write_jsonl
+from syvern.sft.dataset import coverage_counts, dedupe_by_output, split_by_source_file, write_jsonl
 
 
 def _load_jsonl(path: Path) -> list[dict]:

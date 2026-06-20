@@ -6,8 +6,8 @@ import json
 import sys
 from pathlib import Path
 
-from syvern.sft_dataset import write_jsonl
-from syvern.sft_filter_api import filter_records_with_validate_batch, make_http_validate_batch
+from syvern.sft.dataset import write_jsonl
+from syvern.sft.filter_api import filter_records_with_validate_batch, make_http_validate_batch
 
 
 def _load_jsonl(path: Path) -> list[dict]:
