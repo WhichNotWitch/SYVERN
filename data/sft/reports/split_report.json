@@ -1,0 +1,35 @@
+{
+  "deduped_records": 237,
+  "duplicate_ids": [],
+  "input_records": 237,
+  "train_coverage": {
+    "action": 58,
+    "attribute": 113,
+    "connection": 33,
+    "constraint": 18,
+    "interface": 9,
+    "item": 40,
+    "package": 211,
+    "part": 152,
+    "port": 27,
+    "redefinition": 24,
+    "requirement": 21,
+    "state": 16,
+    "subsetting": 10
+  },
+  "train_records": 213,
+  "val_coverage": {
+    "action": 10,
+    "attribute": 15,
+    "connection": 3,
+    "constraint": 2,
+    "item": 5,
+    "package": 24,
+    "part": 17,
+    "port": 3,
+    "requirement": 3,
+    "state": 3,
+    "subsetting": 1
+  },
+  "val_records": 24
+}

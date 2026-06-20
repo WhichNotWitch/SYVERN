@@ -163,6 +163,7 @@ class RewardConfigSummary(BaseModel):
     rubric_version: str
     ipt_threshold: float
     data_filter_min_reward: float
+    data_filter_min_stage: str
 
 
 class AuditEventSummary(BaseModel):

@@ -345,7 +345,7 @@ class ValidationPipeline:
             response.meta.data_filter_pass = False
             response.meta.data_filter_reason = "vetoed"
             return
-        if not response.tier_summary.t0_pass:
+        if not self._data_filter_min_stage_passed(response):
             response.meta.data_filter_pass = False
             response.meta.data_filter_reason = "t0_failed"
             return
@@ -355,3 +355,16 @@ class ValidationPipeline:
             return
         response.meta.data_filter_pass = True
         response.meta.data_filter_reason = "passed"
+
+    def _data_filter_min_stage_passed(self, response: ValidateResponse) -> bool:
+        stage = response.stage
+        parse_passed = stage.parse.reached and stage.parse.ok
+        if self.settings.data_filter_min_stage == "parse":
+            return parse_passed
+        resolve_passed = parse_passed and stage.resolve.reached and stage.resolve.ok
+        if self.settings.data_filter_min_stage == "resolve":
+            return resolve_passed
+        typecheck_passed = resolve_passed and stage.typecheck.reached and stage.typecheck.ok
+        if self.settings.data_filter_min_stage == "typecheck":
+            return typecheck_passed
+        return typecheck_passed and stage.constraint.reached and stage.constraint.ok

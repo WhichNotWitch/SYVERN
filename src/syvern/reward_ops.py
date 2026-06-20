@@ -24,6 +24,7 @@ def reward_config_summary(settings: SyvernSettings) -> RewardConfigSummary:
         rubric_version=settings.rubric_version,
         ipt_threshold=settings.ipt_threshold,
         data_filter_min_reward=settings.data_filter_min_reward,
+        data_filter_min_stage=settings.data_filter_min_stage,
     )
 
 

@@ -1,0 +1,12 @@
+{
+  "pass_rate": 0.7694805194805194,
+  "passed": 237,
+  "read": 308,
+  "reason_counts": {
+    "passed": 237,
+    "t0_failed": 70,
+    "vetoed": 1
+  },
+  "rejected": 71,
+  "validator_fingerprint": "syvern-phase2-pilot-http@0.8.0+rules@h4+intent@heuristic-h5+ops@h6+match@h9-normalized-fuzzy-v1+backends[pilot@pilot-0.59.0,monticore-stub@0.6.0]"
+}

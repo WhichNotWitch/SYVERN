@@ -136,6 +136,21 @@ syvern align --adapter pilot --dataset data/alignment/pilot_real_corpus.jsonl --
 syvern align --adapter pilot --dataset data/alignment/pilot_real_corpus.jsonl --emit-calibrated data/alignment/pilot_real_calibrated.jsonl
 ```
 
+### Pinned Phase 1 alignment fingerprint
+
+Phase 1 manual alignment data is pinned to the real Pilot 0.59.0 service and
+the SYVERN rule stack below. Use the same fingerprint for data creation,
+training filters, and evaluation runs until the corpus is intentionally
+re-calibrated:
+
+```text
+syvern-phase2-pilot-http@0.8.0+rules@h4+intent@heuristic-h5+ops@h6+match@h9-normalized-fuzzy-v1+backends[pilot@pilot-0.59.0,monticore-stub@0.6.0]
+```
+
+- Pilot `/version`: `pilot-0.59.0`, grammar `sysml-v2-textual`, rules `kerml-sysml-constraints`.
+- Manual corpus: `data/alignment/manual_v1.jsonl` with quota `valid22/syntax10/unresolved10/type10/nested8`.
+- Recommended `data_filter` gate for this corpus: `data_filter_min_stage=typecheck` or stricter; the default `constraint` gate is 60/60 against `keep_expected`, while `resolve` admits the 10 type-error cases.
+
 ## Online Reward Benchmark
 
 Each non-empty line in the sample file is validated with `mode="online_reward"`.

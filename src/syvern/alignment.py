@@ -18,12 +18,16 @@ class AlignmentCase:
     case_id: str
     text: str
     parse_ok: bool
-    unresolved_refs: int
-    type_errors: int
+    unresolved_refs: int | None = None
+    type_errors: int | None = None
     category: str = "unspecified"
     # None = element set not labelled (skipped by element accuracy);
     # () = labelled empty (e.g. syntax errors yield no elements).
     expected_elements: tuple[tuple[str, str], ...] | None = None
+    # Manual human-truth schema labels stage ok-ness instead of exact counts.
+    # None means the stage was not reached because an earlier stage failed.
+    resolve_ok: bool | None = None
+    typecheck_ok: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -71,23 +75,43 @@ def load_alignment_cases(path: str | Path) -> list[AlignmentCase]:
             continue
         payload = json.loads(stripped)
         try:
-            cases.append(
-                AlignmentCase(
-                    case_id=str(payload["case_id"]),
-                    text=str(payload["text"]),
-                    parse_ok=bool(payload["parse_ok"]),
-                    unresolved_refs=int(payload["unresolved_refs"]),
-                    type_errors=int(payload["type_errors"]),
-                    category=str(payload.get("category", "unspecified")).strip() or "unspecified",
-                    expected_elements=_parse_expected_elements(payload.get("expected_elements")),
-                )
-            )
+            cases.append(_alignment_case_from_payload(payload))
         except KeyError as exc:
             missing = exc.args[0]
             raise ValueError(f"{dataset_path}:{line_number} missing required field {missing}") from exc
     if not cases:
         raise ValueError(f"{dataset_path} does not contain any alignment cases")
     return cases
+
+
+def _alignment_case_from_payload(payload: dict[str, object]) -> AlignmentCase:
+    parse_ok = bool(payload["parse_ok"])
+    base = {
+        "case_id": str(payload["case_id"]),
+        "text": str(payload["text"]),
+        "parse_ok": parse_ok,
+        "category": str(payload.get("category", "unspecified")).strip() or "unspecified",
+        "expected_elements": _parse_expected_elements(payload.get("expected_elements")),
+    }
+    if "unresolved_refs" in payload or "type_errors" in payload:
+        return AlignmentCase(
+            **base,
+            unresolved_refs=int(payload["unresolved_refs"]),
+            type_errors=int(payload["type_errors"]),
+        )
+    return AlignmentCase(
+        **base,
+        resolve_ok=_optional_bool(payload["resolve_ok"]),
+        typecheck_ok=_optional_bool(payload["typecheck_ok"]),
+    )
+
+
+def _optional_bool(value: object) -> bool | None:
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise ValueError("manual stage truth must be bool or null")
+    return value
 
 
 def calibrated_case_payloads(
@@ -153,27 +177,31 @@ def run_adapter_alignment(
                 AlignmentFailure(case.case_id, "parse", str(case.parse_ok), str(parse_result.ok))
             )
 
-        if resolve_result.unresolved_refs == case.unresolved_refs:
+        if _resolve_matches(case, resolve_result.ok, resolve_result.unresolved_refs):
             resolve_matches += 1
         else:
+            expected = _expected_resolve(case)
+            actual = _actual_resolve(case, resolve_result.ok, resolve_result.unresolved_refs)
             case_failures.append(
                 AlignmentFailure(
                     case.case_id,
                     "resolve",
-                    str(case.unresolved_refs),
-                    str(resolve_result.unresolved_refs),
+                    expected,
+                    actual,
                 )
             )
 
-        if typecheck_result.type_errors == case.type_errors:
+        if _typecheck_matches(case, typecheck_result.ok, typecheck_result.type_errors):
             typecheck_matches += 1
         else:
+            expected = _expected_typecheck(case)
+            actual = _actual_typecheck(case, typecheck_result.ok, typecheck_result.type_errors)
             case_failures.append(
                 AlignmentFailure(
                     case.case_id,
                     "typecheck",
-                    str(case.type_errors),
-                    str(typecheck_result.type_errors),
+                    expected,
+                    actual,
                 )
             )
 
@@ -213,3 +241,47 @@ def run_adapter_alignment(
         category_counts=dict(sorted(Counter(case.category for case in case_list).items())),
         failures=failures,
     )
+
+
+def _uses_manual_bool_schema(case: AlignmentCase) -> bool:
+    return case.unresolved_refs is None and case.type_errors is None
+
+
+def _resolve_matches(case: AlignmentCase, actual_ok: bool, actual_unresolved_refs: int) -> bool:
+    if not _uses_manual_bool_schema(case):
+        return actual_unresolved_refs == case.unresolved_refs
+    if case.resolve_ok is None:
+        return True
+    return actual_ok == case.resolve_ok
+
+
+def _typecheck_matches(case: AlignmentCase, actual_ok: bool, actual_type_errors: int) -> bool:
+    if not _uses_manual_bool_schema(case):
+        return actual_type_errors == case.type_errors
+    if case.typecheck_ok is None:
+        return True
+    return actual_ok == case.typecheck_ok
+
+
+def _expected_resolve(case: AlignmentCase) -> str:
+    if not _uses_manual_bool_schema(case):
+        return str(case.unresolved_refs)
+    return "not_reached" if case.resolve_ok is None else str(case.resolve_ok)
+
+
+def _actual_resolve(case: AlignmentCase, actual_ok: bool, actual_unresolved_refs: int) -> str:
+    if not _uses_manual_bool_schema(case):
+        return str(actual_unresolved_refs)
+    return str(actual_ok)
+
+
+def _expected_typecheck(case: AlignmentCase) -> str:
+    if not _uses_manual_bool_schema(case):
+        return str(case.type_errors)
+    return "not_reached" if case.typecheck_ok is None else str(case.typecheck_ok)
+
+
+def _actual_typecheck(case: AlignmentCase, actual_ok: bool, actual_type_errors: int) -> str:
+    if not _uses_manual_bool_schema(case):
+        return str(actual_type_errors)
+    return str(actual_ok)

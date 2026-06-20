@@ -176,6 +176,19 @@ def test_data_filter_drops_t0_pass_below_reward_threshold():
     assert response.meta.data_filter_reason == "reward_below_threshold"
 
 
+def test_data_filter_min_stage_can_gate_at_resolve():
+    settings = SyvernSettings(data_filter_min_stage="resolve")
+    response = ValidationPipeline(settings=settings).validate(
+        "part vehicle.engine attribute vehicle.mass type_error",
+        mode="data_filter",
+    )
+
+    assert response.stage.resolve.ok is True
+    assert response.stage.typecheck.ok is False
+    assert response.meta.data_filter_pass is True
+    assert response.meta.data_filter_reason == "passed"
+
+
 def test_validate_many_returns_batch_response_with_metrics_in_request_order():
     pipeline = ValidationPipeline()
     result = pipeline.validate_many(

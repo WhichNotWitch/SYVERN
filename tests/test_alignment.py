@@ -26,6 +26,41 @@ def test_load_alignment_cases_from_jsonl():
     }
 
 
+def test_load_alignment_cases_accepts_manual_bool_schema(tmp_path):
+    dataset = tmp_path / "manual.jsonl"
+    dataset.write_text(
+        "\n".join(
+            [
+                '{"case_id":"valid","category":"valid","text":"part vehicle.engine",'
+                '"parse_ok":true,"resolve_ok":true,"typecheck_ok":true,"keep_expected":true}',
+                '{"case_id":"syntax","category":"syntax","text":"syntax_error",'
+                '"parse_ok":false,"resolve_ok":null,"typecheck_ok":null,"keep_expected":false}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    cases = load_alignment_cases(dataset)
+
+    assert cases[0] == AlignmentCase(
+        case_id="valid",
+        text="part vehicle.engine",
+        parse_ok=True,
+        category="valid",
+        resolve_ok=True,
+        typecheck_ok=True,
+    )
+    assert cases[1] == AlignmentCase(
+        case_id="syntax",
+        text="syntax_error",
+        parse_ok=False,
+        category="syntax",
+        resolve_ok=None,
+        typecheck_ok=None,
+    )
+
+
 def test_run_adapter_alignment_reports_stage_accuracy_and_failures():
     cases = [
         AlignmentCase(
@@ -68,6 +103,51 @@ def test_run_adapter_alignment_reports_stage_accuracy_and_failures():
     assert summary.failures[0].stage == "typecheck"
     assert summary.failures[0].expected == "0"
     assert summary.failures[0].actual == "1"
+
+
+def test_run_adapter_alignment_compares_manual_bool_stage_truth():
+    cases = [
+        AlignmentCase(
+            case_id="valid",
+            text="part vehicle.engine attribute vehicle.mass",
+            parse_ok=True,
+            category="valid",
+            resolve_ok=True,
+            typecheck_ok=True,
+        ),
+        AlignmentCase(
+            case_id="syntax",
+            text="syntax_error",
+            parse_ok=False,
+            category="syntax",
+            resolve_ok=None,
+            typecheck_ok=None,
+        ),
+        AlignmentCase(
+            case_id="unresolved",
+            text="unresolved_ref",
+            parse_ok=True,
+            category="unresolved",
+            resolve_ok=False,
+            typecheck_ok=None,
+        ),
+        AlignmentCase(
+            case_id="type",
+            text="part vehicle.engine type_error",
+            parse_ok=True,
+            category="type",
+            resolve_ok=True,
+            typecheck_ok=False,
+        ),
+    ]
+
+    summary = run_adapter_alignment(PilotStubAdapter(), cases)
+
+    assert summary.parse_accuracy == 1.0
+    assert summary.resolve_accuracy == 1.0
+    assert summary.typecheck_accuracy == 1.0
+    assert summary.overall_accuracy == 1.0
+    assert summary.failures == []
 
 
 CORPUS = Path(__file__).resolve().parents[1] / "data" / "alignment" / "pilot_corpus.jsonl"

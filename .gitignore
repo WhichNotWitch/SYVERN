@@ -12,3 +12,7 @@ __pycache__/
 .pytest_tmp/
 .gradle-user-home/
 .gradle-test-home/
+
+# Generated SFT data work areas
+data/sft/raw_sources/
+data/sft/interim/

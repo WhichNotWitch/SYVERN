@@ -43,6 +43,7 @@ def test_load_settings_from_env_maps_production_configuration():
         "SYVERN_IDENTITY_RBAC_POLICY": '{"sysml-readers":["read"],"sysml-writers":["write"]}',
         "SYVERN_ENFORCE_TENANT_ISOLATION": "true",
         "SYVERN_DATA_FILTER_MIN_REWARD": "0.75",
+        "SYVERN_DATA_FILTER_MIN_STAGE": "resolve",
     })
 
     assert settings.pilot_endpoint == "http://pilot.local/api"
@@ -78,6 +79,7 @@ def test_load_settings_from_env_maps_production_configuration():
     }
     assert settings.enforce_tenant_isolation is True
     assert settings.data_filter_min_reward == 0.75
+    assert settings.data_filter_min_stage == "resolve"
 
 
 def test_load_settings_from_env_ignores_blank_optional_strings():
@@ -142,3 +144,8 @@ def test_load_settings_from_env_rejects_unknown_rbac_permissions():
 def test_load_settings_from_env_rejects_unknown_identity_rbac_permissions():
     with pytest.raises(ValueError, match="SYVERN_IDENTITY_RBAC_POLICY contains unknown permission delete"):
         load_settings_from_env({"SYVERN_IDENTITY_RBAC_POLICY": '{"sysml-users":["delete"]}'})
+
+
+def test_settings_rejects_invalid_data_filter_min_stage():
+    with pytest.raises(ValueError, match="data_filter_min_stage must be one of"):
+        SyvernSettings(data_filter_min_stage="semantic")

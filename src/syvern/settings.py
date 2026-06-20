@@ -11,6 +11,7 @@ from typing import Literal
 RbacPermission = Literal["read", "write", "admin"]
 RbacPolicy = dict[str, tuple[RbacPermission, ...]]
 IdentityRbacPolicy = dict[str, tuple[RbacPermission, ...]]
+DataFilterStage = Literal["parse", "resolve", "typecheck", "constraint"]
 
 
 def _default_rbac_policy() -> RbacPolicy:
@@ -49,6 +50,7 @@ class SyvernSettings:
     ipt_threshold: float = 1.0
     fuzzy_threshold: int = 1
     data_filter_min_reward: float = 0.8
+    data_filter_min_stage: DataFilterStage = "constraint"
     cap_type: int = 4
     cap_cons: int = 4
     cap_hall: int = 4
@@ -58,7 +60,7 @@ class SyvernSettings:
     monitor_veto_rate_increase_threshold: float = 0.20
     monitor_stable_drop_threshold: float = 0.20
     pilot_endpoint: str = "http://127.0.0.1:8888"
-    pilot_version: str = "0.6.0"
+    pilot_version: str = "pilot-0.59.0"
     pilot_timeout_s: float = 2.0
     monticore_endpoint: str | None = None
     monticore_version: str = "0.6.0"
@@ -118,6 +120,8 @@ class SyvernSettings:
             raise ValueError("fuzzy_threshold must not be negative")
         if self.r_max > 0 and not 0.0 <= self.data_filter_min_reward <= self.r_max:
             raise ValueError("data_filter_min_reward must be between 0.0 and r_max")
+        if self.data_filter_min_stage not in {"parse", "resolve", "typecheck", "constraint"}:
+            raise ValueError("data_filter_min_stage must be one of parse, resolve, typecheck, constraint")
         if self.cache_max_size <= 0:
             raise ValueError("cache_max_size must be positive")
         if self.record_retention_limit is not None and self.record_retention_limit <= 0:
@@ -202,6 +206,10 @@ _FLOAT_ENV_FIELDS: dict[str, str] = {
     "SYVERN_AUDIT_SINK_TIMEOUT_S": "audit_sink_timeout_s",
 }
 
+_DATA_FILTER_STAGE_ENV_FIELDS: dict[str, str] = {
+    "SYVERN_DATA_FILTER_MIN_STAGE": "data_filter_min_stage",
+}
+
 _BOOL_ENV_FIELDS: dict[str, str] = {
     "SYVERN_ENABLE_IDENTITY_RBAC": "enable_identity_rbac",
     "SYVERN_ENFORCE_TENANT_ISOLATION": "enforce_tenant_isolation",
@@ -241,6 +249,11 @@ def load_settings_from_env(environ: Mapping[str, str] | None = None) -> SyvernSe
         value = _optional_string(source.get(env_name))
         if value is not None:
             kwargs[field_name] = _parse_float(env_name, value)
+
+    for env_name, field_name in _DATA_FILTER_STAGE_ENV_FIELDS.items():
+        value = _optional_string(source.get(env_name))
+        if value is not None:
+            kwargs[field_name] = _parse_data_filter_stage(env_name, value)
 
     for env_name, field_name in _BOOL_ENV_FIELDS.items():
         value = _optional_string(source.get(env_name))
@@ -288,6 +301,13 @@ def _parse_bool(env_name: str, value: str) -> bool:
     if normalized in {"0", "false", "no", "off"}:
         return False
     raise ValueError(f"{env_name} must be a boolean")
+
+
+def _parse_data_filter_stage(env_name: str, value: str) -> DataFilterStage:
+    normalized = value.strip().lower()
+    if normalized not in {"parse", "resolve", "typecheck", "constraint"}:
+        raise ValueError(f"{env_name} must be one of parse, resolve, typecheck, constraint")
+    return cast(DataFilterStage, normalized)
 
 
 def _parse_rbac_policy(value: str, source_name: str = "SYVERN_API_RBAC_POLICY") -> RbacPolicy:

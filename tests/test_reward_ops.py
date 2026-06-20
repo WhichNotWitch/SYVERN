@@ -32,6 +32,7 @@ def test_reward_config_summary_exposes_weights_caps_and_fingerprint():
     assert summary.rubric_version == settings.rubric_version
     assert summary.ipt_threshold == settings.ipt_threshold
     assert summary.data_filter_min_reward == settings.data_filter_min_reward
+    assert summary.data_filter_min_stage == settings.data_filter_min_stage
 
 
 def test_validate_reward_settings_accepts_default_h6_settings():
