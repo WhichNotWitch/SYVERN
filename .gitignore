@@ -4,6 +4,7 @@ scripts/pilot-real.local.ps1
 # Python generated files
 __pycache__/
 *.py[cod]
+*.log
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
