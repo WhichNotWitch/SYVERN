@@ -18,7 +18,7 @@ tasks.named('test') {
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
+        languageVersion = JavaLanguageVersion.of(21)
     }
 }
 
@@ -39,7 +39,7 @@ tasks.named('run') {
 // --- Optional real Pilot backend (H7) -------------------------------------
 // The SysML v2 Pilot is NOT on Maven Central; the SysML v2 Jupyter kernel bundles
 // it in one fat jar (jupyter-sysml-kernel-<ver>-all.jar). Build the real backend
-// against that jar:
+// against that jar. Current kernel jars are compiled for Java 21:
 //   gradle build -PwithPilot -PpilotJar=/path/to/jupyter-sysml-kernel-0.59.0-all.jar
 // Without -PwithPilot the default build only contains the deterministic stub.
 if (project.hasProperty('withPilot')) {

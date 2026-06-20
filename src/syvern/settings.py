@@ -35,7 +35,7 @@ class RewardWeights:
 
 @dataclass(frozen=True)
 class SyvernSettings:
-    validator_fingerprint: str = "syvern-phase2-stub@0.7.0+rules@h4+intent@heuristic-h5+ops@h6+match@h9-normalized-fuzzy-v1"
+    validator_fingerprint: str = "syvern-phase2-pilot-http@0.8.0+rules@h4+intent@heuristic-h5+ops@h6+match@h9-normalized-fuzzy-v1"
     matching_policy_id: str = "h9-normalized-fuzzy-v1"
     judge_model: str = "h5-deterministic-heuristic"
     rubric_version: str = "h5-rubric-v1"
@@ -57,13 +57,9 @@ class SyvernSettings:
     monitor_coverage_stall_threshold: float = 0.05
     monitor_veto_rate_increase_threshold: float = 0.20
     monitor_stable_drop_threshold: float = 0.20
-    pilot_endpoint: str | None = None
+    pilot_endpoint: str = "http://127.0.0.1:8888"
     pilot_version: str = "0.6.0"
     pilot_timeout_s: float = 2.0
-    use_subset_parser: bool = False
-    # Explicit primary L0 backend. None falls back to the legacy inference
-    # (endpoint -> "pilot", use_subset_parser -> "subset", else "stub").
-    pilot_backend: Literal["stub", "subset", "pilot"] | None = None
     monticore_endpoint: str | None = None
     monticore_version: str = "0.6.0"
     monticore_timeout_s: float = 2.0
@@ -141,8 +137,6 @@ class SyvernSettings:
                 raise ValueError(f"{name} must be positive")
         if self.formal_endpoint and self.formal_tool is None:
             raise ValueError("formal_tool is required when formal_endpoint is set")
-        if self.pilot_backend is not None and self.pilot_backend not in {"stub", "subset", "pilot"}:
-            raise ValueError("pilot_backend must be one of stub, subset, pilot")
 
 
 _STRING_ENV_FIELDS: dict[str, str] = {
@@ -152,7 +146,6 @@ _STRING_ENV_FIELDS: dict[str, str] = {
     "SYVERN_RUBRIC_VERSION": "rubric_version",
     "SYVERN_PILOT_ENDPOINT": "pilot_endpoint",
     "SYVERN_PILOT_VERSION": "pilot_version",
-    "SYVERN_PILOT_BACKEND": "pilot_backend",
     "SYVERN_MONTICORE_ENDPOINT": "monticore_endpoint",
     "SYVERN_MONTICORE_VERSION": "monticore_version",
     "SYVERN_FORMAL_ENDPOINT": "formal_endpoint",
@@ -212,7 +205,6 @@ _FLOAT_ENV_FIELDS: dict[str, str] = {
 _BOOL_ENV_FIELDS: dict[str, str] = {
     "SYVERN_ENABLE_IDENTITY_RBAC": "enable_identity_rbac",
     "SYVERN_ENFORCE_TENANT_ISOLATION": "enforce_tenant_isolation",
-    "SYVERN_USE_SUBSET_PARSER": "use_subset_parser",
 }
 
 _WEIGHT_ENV_FIELDS: dict[str, str] = {

@@ -19,24 +19,41 @@ class _FakeResponse:
         return json.dumps(self.payload).encode("utf-8")
 
 
+def _fake_passing_pilot_urlopen(request, timeout):
+    if request.full_url.endswith("/version"):
+        return _FakeResponse({"pilot_version": "realv"})
+    return _FakeResponse(
+        {
+            "parse": {"ok": True, "errors": []},
+            "resolve": {"ok": True, "unresolved_refs": 0, "errors": []},
+            "typecheck": {"ok": True, "type_errors": 0, "errors": []},
+            "elements": [
+                {"type": "part", "qualified_name": "vehicle.engine"},
+                {"type": "attribute", "qualified_name": "vehicle.mass"},
+            ],
+        }
+    )
+
+
 def test_adapter_pilot_builds_http_adapter_from_env(monkeypatch):
     from syvern.adapters.pilot import PilotAdapter
 
-    monkeypatch.setenv("SYVERN_PILOT_ENDPOINT", "http://pilot.local:8080")
+    monkeypatch.setenv("SYVERN_PILOT_ENDPOINT", "http://pilot.local:8888")
     monkeypatch.setenv("SYVERN_PILOT_VERSION", "2026.9")
 
     adapter = _adapter("pilot")
 
     assert isinstance(adapter, PilotAdapter)
-    assert adapter.endpoint == "http://pilot.local:8080"
+    assert adapter.endpoint == "http://pilot.local:8888"
     assert adapter.version == "2026.9"
 
 
-def test_adapter_pilot_requires_endpoint(monkeypatch):
+def test_adapter_pilot_defaults_to_local_8888(monkeypatch):
     monkeypatch.delenv("SYVERN_PILOT_ENDPOINT", raising=False)
 
-    with pytest.raises(SystemExit):
-        _adapter("pilot")
+    adapter = _adapter("pilot")
+
+    assert adapter.endpoint == "http://127.0.0.1:8888"
 
 
 def test_alignment_cli_runs_against_real_pilot_adapter(monkeypatch, tmp_path, capsys):
@@ -90,185 +107,15 @@ def test_alignment_cli_runs_against_real_pilot_adapter(monkeypatch, tmp_path, ca
     assert output["overall_accuracy"] == 1.0
 
 
-def test_alignment_cli_outputs_json_summary_for_stub_dataset(capsys):
-    exit_code = main(
-        [
-            "align",
-            "--adapter",
-            "pilot-stub",
-            "--dataset",
-            "data/alignment/stub_smoke.jsonl",
-            "--min-overall",
-            "1.0",
-        ]
-    )
-
-    output = json.loads(capsys.readouterr().out)
-    assert exit_code == 0
-    assert output["adapter_name"] == "pilot-stub"
-    assert output["total"] == 4
-    assert output["category_counts"] == {
-        "syntax_error": 1,
-        "type_error": 1,
-        "unresolved_ref": 1,
-        "valid": 1,
-    }
-    assert output["overall_accuracy"] == 1.0
-    assert output["failures"] == []
+def test_alignment_cli_rejects_removed_adapter_names():
+    with pytest.raises(SystemExit):
+        main(["align", "--adapter", "pilot-stub", "--dataset", "data/alignment/stub_smoke.jsonl"])
 
 
-def test_alignment_cli_returns_nonzero_when_threshold_fails(capsys):
-    exit_code = main(
-        [
-            "align",
-            "--adapter",
-            "pilot-stub",
-            "--dataset",
-            "data/alignment/stub_smoke.jsonl",
-            "--min-overall",
-            "1.1",
-        ]
-    )
-
-    output = json.loads(capsys.readouterr().out)
-    assert exit_code == 1
-    assert output["overall_accuracy"] == 1.0
-
-
-def test_alignment_cli_returns_nonzero_when_stage_threshold_fails(capsys):
-    exit_code = main(
-        [
-            "align",
-            "--adapter",
-            "pilot-stub",
-            "--dataset",
-            "data/alignment/stub_smoke.jsonl",
-            "--min-overall",
-            "1.0",
-            "--min-parse",
-            "1.1",
-        ]
-    )
-
-    output = json.loads(capsys.readouterr().out)
-    assert exit_code == 1
-    assert output["parse_accuracy"] == 1.0
-
-
-def test_alignment_cli_returns_nonzero_when_min_cases_gate_fails(capsys):
-    exit_code = main(
-        [
-            "align",
-            "--adapter",
-            "pilot-stub",
-            "--dataset",
-            "data/alignment/stub_smoke.jsonl",
-            "--min-overall",
-            "1.0",
-            "--min-cases",
-            "50",
-        ]
-    )
-
-    output = json.loads(capsys.readouterr().out)
-    assert exit_code == 1
-    assert output["total"] == 4
-
-
-def test_alignment_cli_returns_nonzero_when_required_category_is_missing(capsys):
-    exit_code = main(
-        [
-            "align",
-            "--adapter",
-            "pilot-stub",
-            "--dataset",
-            "data/alignment/stub_smoke.jsonl",
-            "--min-overall",
-            "1.0",
-            "--require-category",
-            "valid",
-            "--require-category",
-            "nested_scale",
-        ]
-    )
-
-    output = json.loads(capsys.readouterr().out)
-    assert exit_code == 1
-    assert output["category_counts"]["valid"] == 1
-    assert "nested_scale" not in output["category_counts"]
-
-
-def test_alignment_cli_enforces_element_accuracy_gate(capsys):
-    exit_code = main(
-        [
-            "align",
-            "--adapter",
-            "pilot-stub",
-            "--dataset",
-            "data/alignment/pilot_corpus.jsonl",
-            "--min-element-accuracy",
-            "1.0",
-            "--min-cases",
-            "50",
-        ]
-    )
-
-    output = json.loads(capsys.readouterr().out)
-    assert exit_code == 0
-    assert output["element_accuracy"] == 1.0
-    assert output["element_labelled"] >= 50
-
-
-def test_alignment_cli_returns_nonzero_when_element_accuracy_unmet(capsys):
-    exit_code = main(
-        [
-            "align",
-            "--adapter",
-            "pilot-stub",
-            "--dataset",
-            "data/alignment/pilot_corpus.jsonl",
-            "--min-element-accuracy",
-            "1.1",
-        ]
-    )
-
-    output = json.loads(capsys.readouterr().out)
-    assert exit_code == 1
-    assert output["element_accuracy"] == 1.0
-
-
-def test_alignment_cli_runs_subset_adapter_on_real_corpus(capsys):
-    # In-process real validation: parse/resolve/elements on real SysML v2, no JVM.
-    # The corpus is calibrated to the real Pilot; the subset agrees on SYNTAX
-    # (parse) but its element/resolve labels differ, so only gate on parse.
-    exit_code = main(
-        [
-            "align",
-            "--adapter",
-            "subset",
-            "--dataset",
-            "data/alignment/pilot_real_corpus.jsonl",
-            "--min-overall",
-            "0.0",
-            "--min-parse",
-            "1.0",
-            "--min-cases",
-            "20",
-        ]
-    )
-
-    output = json.loads(capsys.readouterr().out)
-    assert exit_code == 0
-    assert output["adapter_name"] == "subset-pilot"
-    # subset agrees with the real Pilot on syntax and intra-file resolution;
-    # element sets differ (simpler extraction), so element accuracy is not gated.
-    assert output["parse_accuracy"] == 1.0
-    assert output["resolve_accuracy"] == 1.0
-
-
-def test_alignment_cli_emits_calibrated_corpus(tmp_path, capsys):
+def test_alignment_cli_emits_calibrated_corpus(monkeypatch, tmp_path, capsys):
     from syvern.alignment import load_alignment_cases
 
+    monkeypatch.setattr("syvern.adapters.pilot.urlopen", _fake_passing_pilot_urlopen)
     dataset = tmp_path / "in.jsonl"
     dataset.write_text(
         json.dumps(
@@ -291,7 +138,7 @@ def test_alignment_cli_emits_calibrated_corpus(tmp_path, capsys):
         [
             "align",
             "--adapter",
-            "pilot-stub",
+            "pilot",
             "--dataset",
             str(dataset),
             "--emit-calibrated",
@@ -315,7 +162,8 @@ def test_alignment_cli_emits_calibrated_corpus(tmp_path, capsys):
     )
 
 
-def test_benchmark_cli_outputs_json_summary_for_sample_file(tmp_path, capsys):
+def test_benchmark_cli_outputs_json_summary_for_sample_file(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr("syvern.adapters.pilot.urlopen", _fake_passing_pilot_urlopen)
     samples = tmp_path / "samples.txt"
     samples.write_text(
         "\n".join(
@@ -338,7 +186,8 @@ def test_benchmark_cli_outputs_json_summary_for_sample_file(tmp_path, capsys):
     assert output["throughput_per_s"] > 0.0
 
 
-def test_benchmark_cli_returns_nonzero_when_latency_threshold_fails(tmp_path, capsys):
+def test_benchmark_cli_returns_nonzero_when_latency_threshold_fails(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr("syvern.adapters.pilot.urlopen", _fake_passing_pilot_urlopen)
     samples = tmp_path / "samples.txt"
     samples.write_text("part vehicle.engine attribute vehicle.mass\n", encoding="utf-8")
 
@@ -357,7 +206,10 @@ def test_benchmark_cli_returns_nonzero_when_latency_threshold_fails(tmp_path, ca
     assert output["average_latency_ms"] > 0.0
 
 
-def test_benchmark_cli_returns_nonzero_when_throughput_threshold_fails(tmp_path, capsys):
+def test_benchmark_cli_returns_nonzero_when_throughput_threshold_fails(
+    monkeypatch, tmp_path, capsys
+):
+    monkeypatch.setattr("syvern.adapters.pilot.urlopen", _fake_passing_pilot_urlopen)
     samples = tmp_path / "samples.txt"
     samples.write_text("part vehicle.engine attribute vehicle.mass\n", encoding="utf-8")
 

@@ -8,8 +8,6 @@ from typing import Sequence
 
 from syvern.adapters.base import ValidatorAdapter
 from syvern.adapters.pilot import PilotAdapter
-from syvern.adapters.stub import MontiCoreStubAdapter, PilotStubAdapter
-from syvern.adapters.subset import SubsetPilotAdapter
 from syvern.alignment import (
     AlignmentSummary,
     calibrated_case_payloads,
@@ -22,18 +20,8 @@ from syvern.settings import load_settings_from_env
 
 
 def _adapter(name: str) -> ValidatorAdapter:
-    if name == "pilot-stub":
-        return PilotStubAdapter()
-    if name == "monticore-stub":
-        return MontiCoreStubAdapter()
-    if name == "subset":
-        return SubsetPilotAdapter()
     if name == "pilot":
         settings = load_settings_from_env()
-        if not settings.pilot_endpoint:
-            raise SystemExit(
-                "align --adapter pilot requires SYVERN_PILOT_ENDPOINT to point at a running Pilot service"
-            )
         return PilotAdapter(settings.pilot_endpoint, settings.pilot_version, settings.pilot_timeout_s)
     raise ValueError(f"unsupported adapter {name}")
 
@@ -100,9 +88,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     align = subparsers.add_parser("align", help="run an adapter alignment dataset")
-    align.add_argument(
-        "--adapter", choices=["pilot-stub", "monticore-stub", "subset", "pilot"], required=True
-    )
+    align.add_argument("--adapter", choices=["pilot"], required=True)
     align.add_argument("--dataset", required=True)
     align.add_argument("--min-overall", type=float, default=1.0)
     align.add_argument("--min-parse", type=float, default=0.0)

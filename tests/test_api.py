@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import syvern.api as api_module
+from syvern.adapters.stub import PilotStubAdapter
 from syvern.audit import SQLiteAuditEventStore
 from syvern.api import app, audit_events, reset_monitor_summary_window, validation_cache, validation_records
 from syvern.settings import SyvernSettings
@@ -9,11 +10,17 @@ from syvern.settings import SyvernSettings
 
 @pytest.fixture(autouse=True)
 def clear_api_state():
+    original_pilot = api_module.pipeline.pilot
+    # API tests exercise SYVERN's HTTP surface, cache, auth, and monitoring
+    # behavior. Keep them hermetic by replacing the external Pilot service
+    # with an in-process deterministic adapter during tests only.
+    api_module.pipeline.pilot = PilotStubAdapter()
     validation_cache.clear()
     validation_records.clear()
     audit_events.clear()
     reset_monitor_summary_window()
     yield
+    api_module.pipeline.pilot = original_pilot
     validation_cache.clear()
     validation_records.clear()
     audit_events.clear()
@@ -808,7 +815,7 @@ def test_reward_config_endpoint_returns_h6_config():
 
     assert response.status_code == 200
     body = response.json()
-    assert body["validator_fingerprint"].startswith("syvern-phase2-stub@0.7.0")
+    assert body["validator_fingerprint"].startswith("syvern-phase2-pilot-http@0.8.0")
     assert set(body["weights"]) == {"w0", "w1", "w2", "w3", "w4", "w5", "w6", "w7"}
     assert body["caps"] == {"cap_type": 4, "cap_cons": 4, "cap_hall": 4}
     assert body["matching_policy_id"] == "h9-normalized-fuzzy-v1"
@@ -870,7 +877,7 @@ def test_dashboard_snapshot_endpoint_returns_empty_operational_view():
 
     assert response.status_code == 200
     body = response.json()
-    assert body["validator_fingerprint"].startswith("syvern-phase2-stub@0.7.0")
+    assert body["validator_fingerprint"].startswith("syvern-phase2-pilot-http@0.8.0")
     assert body["summary"]["record_count"] == 0
     assert body["summary"]["divergence_alerts"] == []
     assert body["tenant_summaries"] == []

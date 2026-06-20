@@ -6,48 +6,21 @@ from syvern.adapters import (
     MontiCoreAdapter,
     MontiCoreStubAdapter,
     PilotAdapter,
-    PilotStubAdapter,
 )
 from syvern.pipeline_factory import build_perturbation_generator, build_validation_pipeline
 from syvern.settings import SyvernSettings
 
 
-def test_build_validation_pipeline_uses_stub_adapters_by_default():
+def test_build_validation_pipeline_uses_local_pilot_by_default():
     pipeline = build_validation_pipeline(SyvernSettings())
 
-    assert isinstance(pipeline.pilot, PilotStubAdapter)
+    assert isinstance(pipeline.pilot, PilotAdapter)
+    assert pipeline.pilot.endpoint == "http://127.0.0.1:8888"
     assert isinstance(pipeline.monticore, MontiCoreStubAdapter)
+    assert pipeline.authoritative is None
     assert pipeline.formal_adapter is None
     assert pipeline.intent_judge is None
     assert pipeline.structural_matcher is None
-
-
-def test_build_validation_pipeline_uses_subset_parser_when_enabled():
-    from syvern.adapters.subset import SubsetPilotAdapter
-
-    pipeline = build_validation_pipeline(SyvernSettings(use_subset_parser=True))
-
-    assert isinstance(pipeline.pilot, SubsetPilotAdapter)
-    assert pipeline.authoritative is None
-
-
-def test_subset_primary_runs_in_parallel_with_authoritative_pilot():
-    from syvern.adapters.subset import SubsetPilotAdapter
-
-    pipeline = build_validation_pipeline(
-        SyvernSettings(pilot_backend="subset", pilot_endpoint="http://pilot.local")
-    )
-
-    # fast in-process subset is the primary (online); real Pilot is authoritative (full)
-    assert isinstance(pipeline.pilot, SubsetPilotAdapter)
-    assert isinstance(pipeline.authoritative, PilotAdapter)
-
-
-def test_explicit_pilot_backend_requires_endpoint():
-    import pytest
-
-    with pytest.raises(ValueError):
-        build_validation_pipeline(SyvernSettings(pilot_backend="pilot"))
 
 
 def test_build_validation_pipeline_wires_configured_http_adapters():

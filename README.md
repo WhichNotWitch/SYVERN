@@ -15,9 +15,14 @@ Design docs: [`doc/syvern_hld.md`](doc/syvern_hld.md) (high-level), [`doc/syvern
 (low-level), [`doc/sysmlv2_harness_final_design.md`](doc/sysmlv2_harness_final_design.md) (final spec),
 and [`doc/syvern_phase2_design.md`](doc/syvern_phase2_design.md) (phase 2 productionization).
 
-> **Implementation status:** this repository is a **deterministic harness** that implements the full
-> design surface (pipeline, schema, reward, anti-gaming, monitoring) on top of **stub backends** by
-> default. HTTP adapter seams and configuration are available for Pilot/Xtext, MontiCore,
+Usage manual: [`doc/USER_MANUAL.zh.md`](doc/USER_MANUAL.zh.md) covers installation, startup,
+API calls, CLI workflows, environment variables, backend selection, security/RBAC, monitoring,
+testing, and the optional Pilot server.
+
+> **Implementation status:** this repository now uses the local **Pilot HTTP service** as the
+> primary L0 SysML v2 parser by default (`http://127.0.0.1:8888`). The validation/reward
+> harness remains deterministic around that parser surface. HTTP adapter seams and configuration
+> are available for MontiCore,
 > Imandra/Gamma/nuXmv, an LLM judge, and an LLM structural matcher — see
 > [Implementation status](#implementation-status).
 
@@ -76,7 +81,7 @@ any sample.
 | [`pipeline_factory.py`](src/syvern/pipeline_factory.py) | settings-driven adapter selection + backend fingerprint composition |
 | [`pipeline.py`](src/syvern/pipeline.py) | Stage 0–5 orchestration / gating state machine |
 | [`storage_factory.py`](src/syvern/storage_factory.py) | settings-driven cache/record-store selection |
-| [`adapters/`](src/syvern/adapters) | L0 Pilot/L0' MontiCore/L2 formal/LLM judge/LLM structural matcher HTTP adapter seams + deterministic stubs |
+| [`adapters/`](src/syvern/adapters) | L0 Pilot/L0' MontiCore/L2 formal/LLM judge/LLM structural matcher HTTP adapter seams |
 | [`rules.py`](src/syvern/rules.py) | L1 metamodel + anti-gaming rules with severity |
 | [`veto.py`](src/syvern/veto.py) | Hard-boundary anti-gaming vetoes |
 | [`structural.py`](src/syvern/structural.py) | T1 element matching, P/R/F1, requirement coverage, deterministic GED accuracy |
@@ -88,7 +93,7 @@ any sample.
 | [`monitoring.py`](src/syvern/monitoring.py) | aggregate summary + RL-divergence detection |
 | [`records.py`](src/syvern/records.py) | validation event stores: in-memory default + SQLite persistence backend |
 | [`settings.py`](src/syvern/settings.py) | weights, caps, thresholds, frozen fingerprints, env loading |
-| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | CI gates: compile, ruff, mypy, pytest, alignment smoke |
+| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | CI gates: compile, ruff, mypy, pytest |
 
 ---
 
@@ -109,9 +114,8 @@ python -m pytest -q
 ## Alignment Smoke
 
 ```powershell
-syvern align --adapter pilot-stub --dataset data/alignment/stub_smoke.jsonl --min-overall 1.0
-syvern align --adapter pilot-stub --dataset data/alignment/stub_smoke.jsonl --min-overall 1.0 --min-parse 1.0 --min-resolve 1.0 --min-typecheck 1.0
-syvern align --adapter pilot-stub --dataset data/alignment/stub_smoke.jsonl --min-cases 50 --require-category valid --require-category syntax_error --require-category unresolved_ref --require-category type_error --require-category nested_scale
+syvern align --adapter pilot --dataset data/alignment/pilot_real_corpus.jsonl --min-overall 0.0 --min-parse 1.0
+syvern align --adapter pilot --dataset data/alignment/pilot_real_corpus.jsonl --emit-calibrated data/alignment/pilot_real_calibrated.jsonl
 ```
 
 ## Online Reward Benchmark
@@ -133,7 +137,7 @@ python -m uvicorn syvern.api:app --reload
 The API loads `SyvernSettings` from `SYVERN_...` environment variables at startup. Examples:
 
 ```powershell
-$env:SYVERN_PILOT_ENDPOINT="http://pilot.local/api"
+$env:SYVERN_PILOT_ENDPOINT="http://127.0.0.1:8888"
 $env:SYVERN_MONTICORE_ENDPOINT="http://monticore.local/api"
 $env:SYVERN_CACHE_PATH="data/syvern-cache.sqlite3"
 $env:SYVERN_RECORD_STORE_PATH="data/syvern-records.sqlite3"
@@ -315,26 +319,27 @@ Validation events, audit events, and cache payloads can also be stored in SQLite
 setting `record_store_path`, `audit_log_path`, and `cache_path`; event retention can be capped with
 `record_retention_limit` and `audit_retention_limit`. Auth audit events can also be exported to an
 external HTTP sink with `audit_sink_endpoint`.
-Phase2 status is tracked in [`STATUS.md`](STATUS.md), with a smoke alignment fixture under
-[`data/alignment/stub_smoke.jsonl`](data/alignment/stub_smoke.jsonl).
+Phase2 status is tracked in [`STATUS.md`](STATUS.md). Real-Pilot alignment inputs live under
+[`data/alignment/pilot_real_corpus.jsonl`](data/alignment/pilot_real_corpus.jsonl).
 
 | Milestone | Delivered | Notes |
 |---|---|---|
-| H1 — T0 core | Stage 0–3, reward, cache, fingerprint, Pilot HTTP adapter seam | stub Pilot by default; live Pilot via settings |
+| H1 — T0 core | Stage 0–3, reward, cache, fingerprint, Pilot HTTP adapter seam | local Pilot HTTP service on port 8888 by default |
 | H2 — cross & robust | L0' agreement, `pass@k` / `stable@k`, `/validate_batch`, MontiCore HTTP adapter seam | stub MontiCore by default; live MontiCore via settings |
 | H3/H9 — structural | Stage 4, frozen policy `h9-normalized-fuzzy-v1`, P/R/F1, coverage, deterministic GED accuracy, hallucination, exact/normalized/fuzzy/soft match counts | soft matching is optional via HTTP seam |
 | H4/H10 — anti-gaming/IPT | veto layer + caller-supplied IPT comparing perturbed outputs to the original output + rule-based spec perturbation generator + optional LLM perturbation seam | LLM perturbation is offline/helper-only |
 | H5/H11 — intent & calibration | deterministic Stage 5 heuristic, injectable LLM judge adapter seam, Cohen's κ helpers, honest source labeling | heuristic by default; live judge via settings |
 | H6/H12 — reward-ready | `/reward_config`, `/audit_events`, `/monitor_summary`, `/dashboard_snapshot`, endpoint divergence alerts, throughput smoke test, in-process LRU cache, env/settings-selectable SQLite cache/record/audit stores, record/audit retention caps, optional best-effort HTTP audit export, data-filter gate, optional legacy/read/write/admin API tokens with configurable RBAC policy, optional trusted-header identity group RBAC, tenant event metadata, local auth audit events, optional tenant-isolated monitor/dashboard reads, L2 formal adapter seam, response reporting, formal aggregate rates, backend factory wiring, alignment harness, benchmark helper, CLI alignment stage/category gates, and CLI latency/throughput gates | API default remains in-memory/open; hosted SLA targets still need deployment-specific values |
-| G8 — CI | GitHub Actions workflow for compileall, ruff, mypy, pytest, and adapter alignment smoke | local CI gates verified |
+| G8 — CI | GitHub Actions workflow for compileall, ruff, mypy, and pytest | real Pilot alignment is run against the operator's Pilot service |
 
 **Known simplifications (by design, not defects):**
 
-- Default backends are deterministic **stubs**. Markers like `syntax_error`, `unresolved_ref`, `type_error`,
-  `parser_disagreement`, `summary_disagreement` drive the stage gates for tests/local dev — not a real
-  SysML parser or equivalence prover. Set `pilot_endpoint`, `monticore_endpoint`, `formal_endpoint`,
-  `intent_judge_endpoint`, `structural_matcher_endpoint`, or `perturbation_endpoint` in `SyvernSettings` to use the corresponding
-  HTTP adapter.
+- The primary L0 parser is the configured Pilot HTTP service, defaulting to
+  `http://127.0.0.1:8888`. The in-repo deterministic adapters remain available only as internal
+  test utilities; the public API and CLI no longer expose stub/subset L0 selection.
+  Set `monticore_endpoint`, `formal_endpoint`, `intent_judge_endpoint`,
+  `structural_matcher_endpoint`, or `perturbation_endpoint` in `SyvernSettings` to use the
+  corresponding auxiliary HTTP adapter.
 - `/monitor_summary` compares the current aggregate window with the previous endpoint call; the
   baseline is in process memory and resets with the service.
 - Aggregate `stable_at_k` is grouped by `metadata.prompt_id` when provided; ungrouped events are

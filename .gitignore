@@ -1,0 +1,13 @@
+# Local machine configuration
+scripts/pilot-real.local.ps1
+
+# Python generated files
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pytest_tmp/
+.gradle-user-home/
+.gradle-test-home/

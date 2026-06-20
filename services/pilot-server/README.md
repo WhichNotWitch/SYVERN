@@ -13,7 +13,8 @@ runnable today with a deterministic **stub** backend; the real Pilot
 
 ## Requirements
 
-- JDK 17+
+- JDK 21+ for the real Pilot backend. The default stub backend can run on JDK 17+, but
+  the current SysML v2 Jupyter kernel jar is compiled for Java 21.
 - Gradle 8.x (or generate the wrapper once: `gradle wrapper`, then use `./gradlew`)
 
 ## Run
@@ -83,17 +84,33 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8080/validate `
 
 ## Wire into SYVERN
 
-Point SYVERN at this service (the current adapter uses the legacy routes):
+SYVERN now uses a Pilot HTTP service as its only public L0 parser path. The
+default SYVERN endpoint is `http://127.0.0.1:8888`, so either run this service
+on port 8888 or override `SYVERN_PILOT_ENDPOINT`.
+
+From the repository root, copy the local config template and fill in your local
+jar/library paths:
 
 ```powershell
-$env:SYVERN_PILOT_ENDPOINT = "http://127.0.0.1:8080"
-$env:SYVERN_PILOT_VERSION  = "stub-0.1.0"
+Copy-Item scripts/pilot-real.local.example.ps1 scripts/pilot-real.local.ps1
+notepad scripts/pilot-real.local.ps1
+```
+
+Then start the real Pilot service:
+
+```powershell
+.\scripts\start-pilot-real.ps1
+```
+
+In another shell:
+
+```powershell
+$env:SYVERN_PILOT_ENDPOINT = "http://127.0.0.1:8888"
 python -m uvicorn syvern.api:app --reload
 ```
 
-With the stub backend this reproduces SYVERN's stub behaviour over HTTP. Swap
-`StubPilotBackend` for `RealPilotBackend` (in `PilotServer.BACKEND`) to get real
-SysML v2 judgement.
+With `PILOT_BACKEND=real`, this gives SYVERN real SysML v2 judgement through the
+same HTTP contract.
 
 ## Real Pilot backend (H7) — VERIFIED against Pilot 0.59.0
 
@@ -114,7 +131,7 @@ $JAR = "<conda-env>/share/jupyter/kernels/sysml/jupyter-sysml-kernel-0.59.0-all.
 $LIB = "<...>/SysML-v2-Release/sysml.library"
 $SVC = "services/pilot-server"
 
-# compile main + real backend against the bundled jar (JDK 17)
+# compile main + real backend against the bundled jar (JDK 21)
 javac -encoding UTF-8 -cp "$SVC/libs/gson-2.10.1.jar" -d "$SVC/build" (Get-ChildItem "$SVC/src/main/java" -Recurse -Filter *.java).FullName
 javac -encoding UTF-8 -cp "$SVC/libs/gson-2.10.1.jar;$JAR;$SVC/build" -d "$SVC/build" (Get-ChildItem "$SVC/src/pilotReal/java" -Recurse -Filter *.java).FullName
 
@@ -130,7 +147,8 @@ gradle run -PwithPilot -PpilotJar=/path/to/jupyter-sysml-kernel-0.59.0-all.jar
 # (env: PILOT_BACKEND=real, SYSML_LIBRARY_PATH=/path/to/sysml.library)
 ```
 
-Then point SYVERN at it: `SYVERN_PILOT_BACKEND=pilot`, `SYVERN_PILOT_ENDPOINT=http://127.0.0.1:8080`.
+Then point SYVERN at it with `SYVERN_PILOT_ENDPOINT=http://127.0.0.1:8888`
+or run the Pilot service on whatever endpoint you configure.
 
 `PilotServer` loads `RealPilotBackend` reflectively, so the default build needs
 no Pilot dependency. `PILOT_BACKEND=real` without the `-PwithPilot`/jar build
@@ -154,27 +172,6 @@ docker run -p 8080:8080 -e PILOT_BACKEND=stub syvern-pilot           # stub
 docker build --build-arg WITH_PILOT=1 -v $HOME/.m2:/root/.m2 -t syvern-pilot-real services/pilot-server
 docker run -p 8080:8080 -e PILOT_BACKEND=real syvern-pilot-real
 ```
-
-## Parallel backends (A ∥ B)
-
-The two validation approaches coexist and are selected per mode by SYVERN:
-
-| `SYVERN_PILOT_BACKEND` | online_reward / data_filter (fast L0) | full (authoritative L0) |
-|---|---|---|
-| `subset` (A) | in-process subset parser | subset (or real Pilot if `SYVERN_PILOT_ENDPOINT` set) |
-| `pilot` (B) | real Pilot | real Pilot |
-| `stub` (default) | stub | stub (or real Pilot if endpoint set) |
-
-The headline parallel setup — **fast in-process subset for the high-throughput
-online path, authoritative real Pilot for full evaluation**:
-
-```powershell
-$env:SYVERN_PILOT_BACKEND = "subset"
-$env:SYVERN_PILOT_ENDPOINT = "http://127.0.0.1:8080"   # real Pilot container
-python -m uvicorn syvern.api:app --reload
-```
-
-This mirrors the design's L0' (fast, in-process) ∥ L0 (authoritative) split.
 
 ## Layout
 

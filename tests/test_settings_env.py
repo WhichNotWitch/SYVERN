@@ -5,19 +5,14 @@ from syvern.settings import SyvernSettings, load_settings_from_env
 
 def test_load_settings_from_env_uses_defaults_for_empty_environment():
     assert load_settings_from_env({}) == SyvernSettings()
+    assert load_settings_from_env({}).pilot_endpoint == "http://127.0.0.1:8888"
 
 
-def test_load_settings_from_env_reads_pilot_backend_and_subset_flag():
+def test_load_settings_from_env_ignores_removed_pilot_backend_switches():
     settings = load_settings_from_env(
         {"SYVERN_PILOT_BACKEND": "subset", "SYVERN_USE_SUBSET_PARSER": "true"}
     )
-    assert settings.pilot_backend == "subset"
-    assert settings.use_subset_parser is True
-
-
-def test_invalid_pilot_backend_is_rejected():
-    with pytest.raises(ValueError):
-        SyvernSettings(pilot_backend="bogus")  # type: ignore[arg-type]
+    assert settings.pilot_endpoint == "http://127.0.0.1:8888"
 
 
 def test_load_settings_from_env_maps_production_configuration():

@@ -10,31 +10,13 @@ from syvern.adapters import (
     MontiCoreAdapter,
     MontiCoreStubAdapter,
     PilotAdapter,
-    PilotStubAdapter,
 )
-from syvern.adapters.base import ValidatorAdapter
-from syvern.adapters.subset import SubsetPilotAdapter
 from syvern.pipeline import ValidationPipeline
 from syvern.settings import SyvernSettings
 
 
 def build_validation_pipeline(settings: SyvernSettings) -> ValidationPipeline:
-    backend = _effective_pilot_backend(settings)
-    authoritative: ValidatorAdapter | None = None
-    if backend == "pilot":
-        if not settings.pilot_endpoint:
-            raise ValueError("pilot_backend='pilot' requires a pilot endpoint")
-        pilot: ValidatorAdapter = _pilot_http_adapter(settings)
-    elif backend == "subset":
-        pilot = SubsetPilotAdapter()
-        # A configured Pilot endpoint runs in parallel as the authoritative L0
-        # for `full` mode while the subset serves the fast online path.
-        if settings.pilot_endpoint:
-            authoritative = _pilot_http_adapter(settings)
-    else:
-        pilot = PilotStubAdapter()
-        if settings.pilot_endpoint:
-            authoritative = _pilot_http_adapter(settings)
+    pilot = _pilot_http_adapter(settings)
     monticore = (
         MontiCoreAdapter(
             settings.monticore_endpoint,
@@ -73,8 +55,6 @@ def build_validation_pipeline(settings: SyvernSettings) -> ValidationPipeline:
         else None
     )
     backend_fingerprints = [pilot.fingerprint(), monticore.fingerprint()]
-    if authoritative is not None:
-        backend_fingerprints.append(f"authoritative:{authoritative.fingerprint()}")
     if formal is not None:
         backend_fingerprints.append(formal.fingerprint())
     if intent_judge is not None:
@@ -92,22 +72,10 @@ def build_validation_pipeline(settings: SyvernSettings) -> ValidationPipeline:
         formal_adapter=formal,
         intent_judge=intent_judge,
         structural_matcher=structural_matcher,
-        authoritative_adapter=authoritative,
     )
 
 
-def _effective_pilot_backend(settings: SyvernSettings) -> str:
-    if settings.pilot_backend is not None:
-        return settings.pilot_backend
-    if settings.pilot_endpoint:
-        return "pilot"
-    if settings.use_subset_parser:
-        return "subset"
-    return "stub"
-
-
 def _pilot_http_adapter(settings: SyvernSettings) -> PilotAdapter:
-    assert settings.pilot_endpoint is not None
     return PilotAdapter(settings.pilot_endpoint, settings.pilot_version, settings.pilot_timeout_s)
 
 

@@ -30,6 +30,3 @@ jobs:
 
       - name: Test
         run: python -m pytest -q
-
-      - name: Adapter alignment smoke
-        run: syvern align --adapter pilot-stub --dataset data/alignment/stub_smoke.jsonl --min-overall 1.0

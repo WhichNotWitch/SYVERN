@@ -14,9 +14,12 @@ SFT 阶段冻结一次,RL 阶段只调权重。
 (详细设计)、[`doc/sysmlv2_harness_final_design.md`](doc/sysmlv2_harness_final_design.md)(最终方案)、
 [`doc/syvern_phase2_design.md`](doc/syvern_phase2_design.md)(二阶段生产化设计)。
 
-> **实现状态:** 本仓库是一个**确定性 harness**,默认在 **stub 后端**之上完整实现设计面(pipeline、
-> schema、奖励、抗作弊、监控)。Pilot/Xtext、MontiCore、Imandra/Gamma/nuXmv 与 LLM 裁判的 HTTP
-> 适配器 seam 和配置入口已具备——见[实现状态](#实现状态)。
+使用手册:[`doc/USER_MANUAL.zh.md`](doc/USER_MANUAL.zh.md),覆盖安装、启动、API 调用、CLI 流程、
+环境变量、后端选择、安全/RBAC、监控、测试和可选 Pilot Server。
+
+> **实现状态:** 本仓库默认使用本机 **Pilot HTTP 服务**作为 L0 SysML v2 解析器
+> (`http://127.0.0.1:8888`)。pipeline、schema、奖励、抗作弊、监控仍围绕该解析器表面保持确定性。
+> MontiCore、Imandra/Gamma/nuXmv 与 LLM 裁判的 HTTP 适配器 seam 和配置入口已具备——见[实现状态](#实现状态)。
 
 ---
 
@@ -69,10 +72,10 @@ reward shaping。Stage 0–3 不依赖参照,可对任意样本运行。
 | [`benchmark.py`](src/syvern/benchmark.py) | 本地 `online_reward` 延迟/吞吐基准辅助 |
 | [`cache.py`](src/syvern/cache.py) | 校验响应缓存:默认内存 + SQLite 持久化后端 |
 | [`cli.py`](src/syvern/cli.py) | 命令行对齐冒烟 runner |
-| [`pipeline_factory.py`](src/syvern/pipeline_factory.py) | 按 settings 选择适配器并组合后端指纹 |
+| [`pipeline_factory.py`](src/syvern/pipeline_factory.py) | 构建 Pilot HTTP 主解析器与辅助后端指纹 |
 | [`pipeline.py`](src/syvern/pipeline.py) | Stage 0–5 编排 / gating 状态机 |
 | [`storage_factory.py`](src/syvern/storage_factory.py) | 按 settings 选择 cache / record store |
-| [`adapters/`](src/syvern/adapters) | L0 Pilot / L0' MontiCore / L2 形式化 / LLM judge HTTP seam + 确定性 stub |
+| [`adapters/`](src/syvern/adapters) | L0 Pilot / L0' MontiCore / L2 形式化 / LLM judge HTTP seam |
 | [`rules.py`](src/syvern/rules.py) | L1 元模型 + 抗作弊规则(带严重度) |
 | [`veto.py`](src/syvern/veto.py) | 硬边界抗作弊否决 |
 | [`structural.py`](src/syvern/structural.py) | T1 元素匹配、P/R/F1、需求覆盖率、确定性 GED 准确率 |
@@ -84,7 +87,7 @@ reward shaping。Stage 0–3 不依赖参照,可对任意样本运行。
 | [`monitoring.py`](src/syvern/monitoring.py) | 聚合摘要 + RL 发散检测 |
 | [`records.py`](src/syvern/records.py) | 校验事件存储:默认内存 + SQLite 持久化后端 |
 | [`settings.py`](src/syvern/settings.py) | 权重、上限、阈值、冻结指纹、环境变量加载 |
-| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | CI gates: compileall、ruff、mypy、pytest、alignment smoke |
+| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | CI gates: compileall、ruff、mypy、pytest |
 
 ---
 
@@ -105,9 +108,8 @@ python -m pytest -q
 ## 对齐冒烟
 
 ```powershell
-syvern align --adapter pilot-stub --dataset data/alignment/stub_smoke.jsonl --min-overall 1.0
-syvern align --adapter pilot-stub --dataset data/alignment/stub_smoke.jsonl --min-overall 1.0 --min-parse 1.0 --min-resolve 1.0 --min-typecheck 1.0
-syvern align --adapter pilot-stub --dataset data/alignment/stub_smoke.jsonl --min-cases 50 --require-category valid --require-category syntax_error --require-category unresolved_ref --require-category type_error --require-category nested_scale
+syvern align --adapter pilot --dataset data/alignment/pilot_real_corpus.jsonl --min-overall 0.0 --min-parse 1.0
+syvern align --adapter pilot --dataset data/alignment/pilot_real_corpus.jsonl --emit-calibrated data/alignment/pilot_real_calibrated.jsonl
 ```
 
 ## Online Reward Benchmark
@@ -129,7 +131,7 @@ python -m uvicorn syvern.api:app --reload
 API 启动时会从 `SYVERN_...` 环境变量加载 `SyvernSettings`。示例:
 
 ```powershell
-$env:SYVERN_PILOT_ENDPOINT="http://pilot.local/api"
+$env:SYVERN_PILOT_ENDPOINT="http://127.0.0.1:8888"
 $env:SYVERN_MONTICORE_ENDPOINT="http://monticore.local/api"
 $env:SYVERN_CACHE_PATH="data/syvern-cache.sqlite3"
 $env:SYVERN_RECORD_STORE_PATH="data/syvern-records.sqlite3"
@@ -283,25 +285,24 @@ pipeline、schema、奖励映射、抗作弊与监控面已全部实现,并由 *
 可选 API token 保护、tenant 事件 metadata、可选可信 header 身份组 RBAC、可选 SQLite 鉴权审计事件与可选 HTTP 审计导出、
 规则扰动生成器、Pilot/MontiCore HTTP seam、L2 形式化响应与聚合监控、可注入 LLM intent judge seam,以及
 settings/env 驱动的后端工厂与指纹组合。设置 `record_store_path`、`audit_log_path` 和 `cache_path` 后,校验事件、审计事件和缓存 payload 都可写入 SQLite 后端,并可用
-`record_retention_limit` / `audit_retention_limit` 限制保留的事件数量;设置 `audit_sink_endpoint` 后可 best-effort 导出鉴权审计事件,导出失败不阻塞本地审计或鉴权响应。二阶段状态记录在 [`STATUS.md`](STATUS.md),stub smoke 对齐夹具位于
-[`data/alignment/stub_smoke.jsonl`](data/alignment/stub_smoke.jsonl)。
+`record_retention_limit` / `audit_retention_limit` 限制保留的事件数量;设置 `audit_sink_endpoint` 后可 best-effort 导出鉴权审计事件,导出失败不阻塞本地审计或鉴权响应。二阶段状态记录在 [`STATUS.md`](STATUS.md),真实 Pilot 对齐输入位于
+[`data/alignment/pilot_real_corpus.jsonl`](data/alignment/pilot_real_corpus.jsonl)。
 
 | 里程碑 | 交付内容 | 说明 |
 |---|---|---|
-| H1 — T0 核心 | Stage 0–3、奖励、缓存、指纹、Pilot HTTP seam | 默认 stub Pilot;可通过 settings 指向 live Pilot |
+| H1 — T0 核心 | Stage 0–3、奖励、缓存、指纹、Pilot HTTP seam | 默认使用本机 8888 端口 Pilot HTTP 服务 |
 | H2 — 交叉与鲁棒 | L0' 一致性、`pass@k` / `stable@k`、`/validate_batch`、MontiCore HTTP seam | 默认 stub MontiCore;可通过 settings 指向 live MontiCore |
 | H3/H9 — 结构层 | Stage 4、策略 `h9-normalized-fuzzy-v1`、P/R/F1、覆盖率、确定性 GED 准确率、幻觉、exact/normalized/fuzzy/soft 计数 | soft 匹配可通过 HTTP seam 启用 |
 | H4/H10 — 抗作弊/IPT | 否决层 + 扰动输出对原始输出的 IPT + 规则规格扰动生成器 | 无 LLM 扰动生成 |
 | H5/H11 — 意图与校准 | 确定性 Stage 5 heuristic、可注入 LLM judge seam、Cohen κ 辅助、诚实来源标记 | 默认 heuristic;可通过 settings 指向 live judge |
 | H6/H12 — 奖励就绪 | `/reward_config`、`/audit_events`、`/monitor_summary`、`/dashboard_snapshot`、端点发散告警、吞吐冒烟测试、LRU 缓存、env/settings 可选 SQLite cache/record/audit store、记录/审计保留上限、可选 best-effort HTTP 审计导出、data-filter gate、可选 legacy/read/write/admin API token 与可配置 RBAC policy、可选可信 header 身份组 RBAC、tenant 事件 metadata、本地鉴权审计事件、可选 tenant 隔离的监控/dashboard 读面、L2 形式化 seam 与聚合率、后端工厂、对齐 harness、基准辅助、CLI 分阶段/类别对齐门禁、CLI 延迟/吞吐门禁 | API 默认仍为内存/开放；hosted SLA 目标仍需按部署环境给定 |
-| G8 — CI | GitHub Actions 工作流:compileall、ruff、mypy、pytest、adapter alignment smoke | 本地 CI gates 已验证 |
+| G8 — CI | GitHub Actions 工作流:compileall、ruff、mypy、pytest | 真实 Pilot alignment 依赖操作者本机 Pilot 服务 |
 
 **已知简化(设计使然,非缺陷):**
 
-- 默认后端为确定性 **stub**。`syntax_error`、`unresolved_ref`、`type_error`、`parser_disagreement`、
-  `summary_disagreement` 等标记驱动各阶段门控,供测试/本地开发用——并非真实 SysML 解析器或等价性证明器。
-  设置 `pilot_endpoint`、`monticore_endpoint`、`formal_endpoint`、`intent_judge_endpoint` 或
-  `structural_matcher_endpoint` 或 `perturbation_endpoint` 可启用对应 HTTP 适配器。
+- 主 L0 解析器是配置的 Pilot HTTP 服务，默认 `http://127.0.0.1:8888`。仓库内确定性适配器仅作为内部测试工具保留；
+  公开 API 与 CLI 不再暴露 stub/subset L0 选择。设置 `monticore_endpoint`、`formal_endpoint`、`intent_judge_endpoint`、
+  `structural_matcher_endpoint` 或 `perturbation_endpoint` 可启用对应辅助 HTTP 适配器。
 - `/monitor_summary` 会与上一次端点调用的聚合窗口比较;基线保存在进程内,服务重启会重置。
 - 聚合 `stable_at_k` 在提供 `metadata.prompt_id` 时按 prompt 分组;未分组事件按单样本 prompt 处理。
 - 未实现:真实后端 >= 50 条对齐数据集、经校准的线上语义对齐匹配、前端仪表盘、部署到真实 IdP/反向代理之后的可信身份 header 接入。

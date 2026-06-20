@@ -50,8 +50,8 @@ class ValidationPipeline:
         self.pilot = pilot_adapter or PilotStubAdapter()
         self.monticore = monticore_adapter or MontiCoreStubAdapter()
         # Optional authoritative L0 used only for `full` mode (e.g. real Pilot),
-        # running in parallel with a fast in-process primary (e.g. subset) for
-        # the high-throughput online path. None => primary is used everywhere.
+        # running in parallel with a primary adapter for full-mode judgement.
+        # None => primary is used everywhere.
         self.authoritative = authoritative_adapter
         self.formal_adapter = formal_adapter
         self.intent_judge = intent_judge
