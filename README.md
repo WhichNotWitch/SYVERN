@@ -17,7 +17,7 @@ and [`doc/syvern_phase2_design.md`](doc/syvern_phase2_design.md) (phase 2 produc
 
 Usage manual: [`doc/USER_MANUAL.zh.md`](doc/USER_MANUAL.zh.md) covers installation, startup,
 API calls, CLI workflows, environment variables, backend selection, security/RBAC, monitoring,
-testing, and the optional Pilot server.
+testing, and the local Pilot server.
 
 > **Implementation status:** this repository now uses the local **Pilot HTTP service** as the
 > primary L0 SysML v2 parser by default (`http://127.0.0.1:8888`). The validation/reward
@@ -45,8 +45,8 @@ testing, and the optional Pilot server.
 
 ```
                 ┌──────────────────────────────────────────────┐
-   model text → │  L0  Pilot Implementation (authoritative)     │ ← primary verdict   [stub]
-                │  L0' MontiCore parser (independent 2nd parser) │ ← cross-agreement   [stub]
+   model text → │  L0  Pilot Implementation (authoritative)     │ ← primary verdict   [local HTTP]
+                │  L0' MontiCore parser (independent 2nd parser) │ ← cross-agreement   [stub/live optional]
                 │  L1  metamodel-derived rules + anti-gaming     │ ← T0 + veto
                 │  L2  formal tools (Imandra/Gamma/nuXmv)        │ ← deep, offline     [adapter seam]
                 └──────────────────────────────────────────────┘
@@ -109,6 +109,24 @@ Requires Python ≥ 3.11.
 
 ```powershell
 python -m pytest -q
+```
+
+## Local Pilot Server
+
+SYVERN expects the real Pilot HTTP service on `http://127.0.0.1:8888` by default. The SysML v2
+Jupyter kernel jar currently requires Java 21.
+
+```powershell
+Copy-Item .\scripts\pilot-real.local.example.ps1 .\scripts\pilot-real.local.ps1
+# Edit scripts\pilot-real.local.ps1 and set $JAR, $LIB, and optionally $GRADLE_EXE.
+powershell -ExecutionPolicy Bypass -File .\scripts\start-pilot-real.ps1
+```
+
+Then start the SYVERN API in another terminal:
+
+```powershell
+$env:SYVERN_PILOT_ENDPOINT="http://127.0.0.1:8888"
+python -m uvicorn syvern.api:app --reload
 ```
 
 ## Alignment Smoke
@@ -305,7 +323,7 @@ enumeration-style gaming. Any hit ⇒ `reward = 0`.
 ## Implementation status
 
 The pipeline, schema, reward map, anti-gaming, and monitoring surfaces are fully implemented and
-verified by **282 passing tests**. Milestones H1–H6 are delivered against the design baseline, with
+verified by **306 passing tests**. Milestones H1–H6 are delivered against the design baseline, with
 phase-2 slices for online parser-agreement semantics, prompt-grouped stable@k, and deterministic
 normalized/fuzzy structural matching plus deterministic GED accuracy, original-output-based IPT consistency, and honest heuristic
 intent source labeling, LRU/thread-locked caching with an optional SQLite backend, and explicit data-filter pass/drop
@@ -347,6 +365,7 @@ Phase2 status is tracked in [`STATUS.md`](STATUS.md). Real-Pilot alignment input
 - Not implemented: the full >= 50 case real-backend alignment dataset, calibrated live semantic-alignment
   matching, frontend dashboards, and deployment behind a real IdP/reverse proxy for trusted identity headers.
 
-**Next steps:** point the configured HTTP adapter seams at live SysML v2 services, configure
-`cache_path` / `record_store_path` / retention in deployments, and run the alignment suites against real backend
-outputs.
+**Next steps:** calibrate the real-Pilot alignment corpus against the local Pilot service, decide the
+production Pilot endpoint/deployment shape beyond `127.0.0.1:8888`, configure `cache_path` /
+`record_store_path` / retention in deployments, and set hosted SLA thresholds once backend latency
+targets are known.
