@@ -202,6 +202,54 @@ def test_checker_allows_identifier_substrings_present_in_output():
     assert len(augmented) == 1
 
 
+def test_checker_allows_polite_sentence_starter():
+    parent = _parent(
+        "official_variation",
+        "package VehicleVariation { part def Vehicle; part def Engine; part def Transmission; }",
+    )
+    config = AugmentationConfig(
+        teacher_model="gpt-5.5", teacher_base_url="https://example.test/v1"
+    )
+    candidates = [
+        TeacherCandidate(
+            "en_task",
+            "en",
+            "Please create a SysML v2 model for vehicle variation with Engine choices.",
+        )
+    ]
+
+    augmented, failures = build_augmented_records(
+        parent, candidates, config=config, batch_id="sample"
+    )
+
+    assert failures == []
+    assert len(augmented) == 1
+
+
+def test_checker_allows_simple_plural_identifier_match():
+    parent = _parent(
+        "official_water",
+        "package WaterDelivery { interface def WaterDelivery { end faucet : Faucet; } part def Faucet; }",
+    )
+    config = AugmentationConfig(
+        teacher_model="gpt-5.5", teacher_base_url="https://example.test/v1"
+    )
+    candidates = [
+        TeacherCandidate(
+            "en_task",
+            "en",
+            "Create a SysML v2 model where a WaterDelivery interface connects Faucets.",
+        )
+    ]
+
+    augmented, failures = build_augmented_records(
+        parent, candidates, config=config, batch_id="sample"
+    )
+
+    assert failures == []
+    assert len(augmented) == 1
+
+
 def test_checker_rejects_english_instruction_over_word_limit():
     parent = _parent()
     config = AugmentationConfig(

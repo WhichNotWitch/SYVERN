@@ -44,6 +44,7 @@ GENERIC_IDENTIFIERS = {
     "Show",
     "Include",
     "Use",
+    "Please",
     "Describe",
 
     # Common English sentence starters / function words
@@ -81,6 +82,7 @@ SENTENCE_START_GENERIC_IDENTIFIERS = {
     "Show",
     "Include",
     "Use",
+    "Please",
     "Inside",
     "Within",
     "Containing",
@@ -506,5 +508,19 @@ def _identifier_supported_by_output(identifier: str, output_identifiers: Iterabl
         return True
     if len(identifier) < 4:
         return False
+    candidates = _identifier_match_candidates(identifier)
+    return any(
+        candidate in output_identifier.casefold()
+        for candidate in candidates
+        for output_identifier in output_identifiers
+    )
+
+
+def _identifier_match_candidates(identifier: str) -> set[str]:
     folded = identifier.casefold()
-    return any(folded in output_identifier.casefold() for output_identifier in output_identifiers)
+    candidates = {folded}
+    if folded.endswith("ies") and len(folded) > 4:
+        candidates.add(folded[:-3] + "y")
+    if folded.endswith("s") and len(folded) > 4:
+        candidates.add(folded[:-1])
+    return candidates
