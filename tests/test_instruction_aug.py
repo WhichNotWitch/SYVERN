@@ -1,4 +1,7 @@
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from scripts.augment_sft_instructions import config_from_env
@@ -325,3 +328,34 @@ def test_config_from_env_reads_non_secret_settings(monkeypatch):
 
     assert config.teacher_model == "gpt-5.5"
     assert config.teacher_base_url == "https://example.test/v1"
+
+
+def test_script_direct_invocation_reaches_environment_validation():
+    env = dict(os.environ)
+    env.pop("OPENAI_API_KEY", None)
+    env.pop("OPENAI_BASE_URL", None)
+    env.pop("SYVERN_TEACHER_MODEL", None)
+    env.pop("PYTHONPATH", None)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/augment_sft_instructions.py",
+            "--mode",
+            "sample",
+            "--train",
+            "data/sft/train.jsonl",
+            "--val",
+            "data/sft/val.jsonl",
+            "--out-dir",
+            "data/sft/instruction_aug",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "missing required environment variable" in result.stderr

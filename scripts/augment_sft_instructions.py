@@ -8,7 +8,10 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any, Mapping
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from syvern.sft.instruction_aug import (
     AugmentationConfig,
