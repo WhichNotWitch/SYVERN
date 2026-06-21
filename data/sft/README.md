@@ -60,15 +60,17 @@ python scripts\split_sft_data.py `
 Folder-merged, with the repo's full SysML library loaded in Pilot:
 
 - Candidates: 99 (83 official folders under `sysml/src` + 16 seed)
-- Passed data filter: 86
-- Rejected: 13 (all `t0_failed`; 0 vetoed)
-- Pass rate: 86.9%
-- Train: 77 (62 official + 15 seed)
-- Val: 9
+- Passed data filter (auto): 86 / Rejected: 13 (all `t0_failed`; 0 vetoed) → 86.9%
+- The 13 rejects were **cross-chapter imports** (training/validation lessons that
+  reference packages defined in earlier chapters). All 13 were **human-resolved**
+  by prepending the imported dependency packages (import-closure) and re-pass the
+  gate. Resolution provenance lives in each record's `source.human_resolution`.
+- Final kept (auto 86 + human-resolved 13): 99
+- Train: 89 / Val: 10
 - Duplicate outputs after filtering: 0
 - Train/val source-folder overlap: 0
 - Construct coverage (train): all 13 tracked constructs present
-  (interface 7, state 9, port 20, constraint 8, requirement 11, …)
+  (interface 11, state 11, port 27, constraint 10, requirement 16, action 36, …)
 
 All final records pass the pinned validator fingerprint:
 

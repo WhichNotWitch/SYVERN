@@ -16,3 +16,4 @@ __pycache__/
 # Generated SFT data work areas
 data/sft/raw_sources/
 data/sft/interim/
+data/sft/proceeded_data/
