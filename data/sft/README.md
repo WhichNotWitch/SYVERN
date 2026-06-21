@@ -65,12 +65,19 @@ Folder-merged, with the repo's full SysML library loaded in Pilot:
   reference packages defined in earlier chapters). All 13 were **human-resolved**
   by prepending the imported dependency packages (import-closure) and re-pass the
   gate. Resolution provenance lives in each record's `source.human_resolution`.
-- Final kept (auto 86 + human-resolved 13): 99
-- Train: 89 / Val: 10
-- Duplicate outputs after filtering: 0
-- Train/val source-folder overlap: 0
-- Construct coverage (train): all 13 tracked constructs present
-  (interface 11, state 11, port 27, constraint 10, requirement 16, action 36, …)
+- Kept full models (auto 86 + human-resolved 13): 99
+- **Decomposition augmentation**: multi-package models are split into
+  self-contained single-package sub-models, each re-validated standalone through
+  the gate (`scripts/decompose_sft_data.py`). Decomposed train/val sub-models are
+  deduped and kept in their parent's split (no leakage); each carries
+  `source.decomposed_from`. Added: train +156, val +15.
+- **Final dataset: 270 records** — Train 245 / Val 25
+  (origin: 16 seed + 70 official folder-merged + 13 human-resolved + 171 decomposed)
+- Duplicate outputs: 0 · Train/val output overlap: 0
+- Construct coverage (train): all 13 present
+  (part 203, attribute 142, action 81, item 53, port 49, connection 42,
+  redefinition 36, requirement 32, state 25, constraint 22, interface 17, subsetting 15)
+- Re-validation: seed 16/16, train 245/245, val 25/25 pass the pinned fingerprint
 
 All final records pass the pinned validator fingerprint:
 

@@ -4,8 +4,10 @@ from syvern.sft_dataset import (
     SourceSpec,
     build_sft_candidates,
     coverage_counts,
+    decompose_records,
     dedupe_by_output,
     split_by_source_file,
+    split_top_level_packages,
 )
 
 
@@ -70,6 +72,49 @@ def test_build_sft_candidates_merge_by_folder_concatenates_one_record_per_folder
         "examples/VehicleExample/Usage.sysml",
     ]
     assert by_path["examples/Other"]["output"] == "package A { part def P; }"
+
+
+def test_split_top_level_packages_brace_matches_and_skips_comment_braces():
+    text = (
+        'package A { part def P; // trailing } brace in comment\n'
+        " /* block } brace */ }\n"
+        'package B { attribute s = "literal } brace"; }'
+    )
+    blocks = split_top_level_packages(text)
+    assert len(blocks) == 2
+    assert blocks[0].startswith("package A {") and blocks[0].rstrip().endswith("}")
+    assert blocks[1].startswith("package B {")
+
+
+def test_decompose_records_emits_self_contained_passing_subpackages():
+    record = {
+        "id": "official_x",
+        "output": "package Good { part def P; }\n\npackage NeedsSibling { part p : P; }",
+        "source": {"path": "examples/Demo", "repo": "r"},
+    }
+    # Validator: a package passes only if it does not reference external 'P'.
+    def validator(text: str) -> bool:
+        return "part p : P" not in text
+
+    seen: set[str] = set()
+    new, report = decompose_records([record], validator, seen_outputs=seen, min_chars=10)
+
+    assert report["tested"] == 2 and report["passed"] == 1 and report["added"] == 1
+    assert len(new) == 1
+    rec = new[0]
+    assert rec["id"].startswith("decomp_")
+    assert rec["output"] == "package Good { part def P; }"
+    assert rec["source"]["decomposed_from"] == "official_x"
+    assert rec["source"]["path"] == "examples/Demo"  # parent split group preserved
+    assert rec["constructs"] == ["package", "part"]
+
+
+def test_decompose_records_skips_already_seen_outputs():
+    record = {"id": "o", "output": "package A { part def P; }\n\npackage B { item def I; }"}
+    seen = {" ".join("package A { part def P; }".split())}
+    new, report = decompose_records([record], lambda t: True, seen_outputs=seen, min_chars=10)
+    # A is already seen; only B is emitted.
+    assert [r["output"] for r in new] == ["package B { item def I; }"]
 
 
 def test_dedupe_by_output_keeps_first_record_and_coverage_counts_constructs():

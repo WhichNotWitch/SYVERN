@@ -119,6 +119,104 @@ def detect_constructs(text: str) -> list[str]:
     return [name for name, pattern in CONSTRUCT_PATTERNS if pattern.search(text)]
 
 
+_PACKAGE_START = re.compile(r"(?:\blibrary\s+)?\bpackage\b")
+
+
+def split_top_level_packages(text: str) -> list[str]:
+    """Return the source of each top-level ``package`` / ``library package`` block.
+
+    Brace-matched, skipping braces inside line/block comments and string
+    literals. Used to decompose a large multi-package model into individual
+    self-contained sub-models (each is re-validated by the caller).
+    """
+    blocks: list[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        match = _PACKAGE_START.search(text, i)
+        if not match:
+            break
+        start = match.start()
+        brace = text.find("{", match.end())
+        if brace < 0:
+            break
+        depth = 0
+        j = brace
+        while j < n:
+            c = text[j]
+            if c == "/" and j + 1 < n and text[j + 1] == "/":
+                j = text.find("\n", j)
+                if j < 0:
+                    j = n
+                continue
+            if c == "/" and j + 1 < n and text[j + 1] == "*":
+                end = text.find("*/", j + 2)
+                j = n if end < 0 else end + 2
+                continue
+            if c == '"':
+                j += 1
+                while j < n and text[j] != '"':
+                    j += 2 if text[j] == "\\" else 1
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        blocks.append(text[start : j + 1])
+        i = j + 1
+    return blocks
+
+
+def decompose_records(
+    records: Iterable[dict[str, Any]],
+    validator: "Any",
+    *,
+    seen_outputs: set[str],
+    min_chars: int = 80,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Split multi-package models into self-contained single-package sub-models.
+
+    ``validator(text) -> bool`` reports whether a package passes the data_filter
+    gate standalone. Only packages that are not already seen (``seen_outputs``,
+    mutated in place) and pass standalone are emitted, each carrying
+    ``source.decomposed_from``. Single-package models are left untouched.
+    """
+    new: list[dict[str, Any]] = []
+    tested = passed = 0
+    for record in records:
+        blocks = split_top_level_packages(str(record.get("output", "")))
+        if len(blocks) < 2:
+            continue
+        for block in blocks:
+            block = block.strip()
+            if len(block) < min_chars:
+                continue
+            key = _normalize_output(block)
+            if key in seen_outputs:
+                continue
+            tested += 1
+            if not validator(block):
+                continue
+            passed += 1
+            seen_outputs.add(key)
+            constructs = detect_constructs(block)
+            digest = hashlib.sha256(block.encode("utf-8")).hexdigest()[:12]
+            source = dict(record.get("source") or {})
+            source["decomposed_from"] = record.get("id")
+            new.append(
+                {
+                    "id": f"decomp_{digest}",
+                    "instruction": _instruction_for_constructs(constructs),
+                    "input": "",
+                    "output": block,
+                    "constructs": constructs,
+                    "source": source,
+                }
+            )
+    return new, {"tested": tested, "passed": passed, "added": len(new)}
+
+
 def write_jsonl(path: Path, records: Iterable[Mapping[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
