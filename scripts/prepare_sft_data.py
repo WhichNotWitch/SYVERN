@@ -30,6 +30,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", required=True, help="candidate JSONL output")
     parser.add_argument("--report", required=True, help="JSON report path")
     parser.add_argument("--max-chars", type=int, default=20_000)
+    parser.add_argument(
+        "--merge-by-folder",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="merge all .sysml files in a folder into one model (the correct validation unit)",
+    )
     args = parser.parse_args(argv)
 
     if not (len(args.source_root) == len(args.repo) == len(args.license)):
@@ -48,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
         sources,
         seed_paths=[Path(path) for path in args.seed],
         max_chars=args.max_chars,
+        merge_by_folder=args.merge_by_folder,
     )
     out = Path(args.out)
     report = Path(args.report)
@@ -57,6 +64,7 @@ def main(argv: list[str] | None = None) -> int:
         json.dumps(
             {
                 "records": len(records),
+                "merge_by_folder": args.merge_by_folder,
                 "coverage": coverage_counts(records),
                 "sources": [
                     {

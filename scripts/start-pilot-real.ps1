@@ -83,6 +83,21 @@ if ($GradleExe -ne "gradle" -and -not (Test-Path -LiteralPath $GradleExe)) {
     throw "Gradle executable not found: $GradleExe"
 }
 
+$PortListeners = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+if ($PortListeners) {
+    $OwnerIds = @($PortListeners | Select-Object -ExpandProperty OwningProcess -Unique)
+    $Owners = @()
+    foreach ($OwnerId in $OwnerIds) {
+        $Process = Get-Process -Id $OwnerId -ErrorAction SilentlyContinue
+        if ($Process) {
+            $Owners += "$($Process.ProcessName)($OwnerId)"
+        } else {
+            $Owners += "pid $OwnerId"
+        }
+    }
+    throw "Port $Port is already in use by $($Owners -join ', '). Stop the existing Pilot server or choose another -Port."
+}
+
 $env:PILOT_PORT = $Port
 $env:PILOT_BACKEND = "real"
 $env:SYSML_LIBRARY_PATH = $SysmlLibrary

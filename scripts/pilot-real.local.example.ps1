@@ -2,7 +2,8 @@
 # The local file is ignored by git.
 
 $JAR = "C:\path\to\jupyter-sysml-kernel-0.59.0-all.jar"
-$LIB = "C:\path\to\SysML-v2-Release\sysml.library"
+$LIB = "C:\Users\16508\Documents\Projects\SYVERN\data\sft\raw_sources\sysml-v2-release\sysml.library"
+$env:SYSML_LIBRARY_PATH = $LIB
 
 # SYVERN expects the Pilot HTTP service here by default.
 $PILOT_PORT = "8888"

@@ -39,14 +39,27 @@ def build_sft_candidates(
     *,
     seed_paths: Iterable[Path] = (),
     max_chars: int = 20_000,
+    merge_by_folder: bool = False,
 ) -> list[dict[str, Any]]:
+    """Build candidate (instruction -> SysML) records from source checkouts.
+
+    With ``merge_by_folder`` the ``.sysml`` files in each directory are
+    concatenated into a single record. Official SysML v2 examples are organised
+    so that all files in one folder together form one complete model (they
+    cross-import siblings); validating them per file makes those imports
+    unresolvable and wrongly rejects valid models. The folder is the correct
+    validation unit.
+    """
     records: list[dict[str, Any]] = []
     for source in sources:
-        for path in _iter_sysml_files(source.root):
-            text = path.read_text(encoding="utf-8", errors="replace").strip()
-            if not text or len(text) > max_chars:
-                continue
-            records.append(_record_from_file(path, source, text))
+        if merge_by_folder:
+            records.extend(_folder_records(source, max_chars))
+        else:
+            for path in _iter_sysml_files(source.root):
+                text = path.read_text(encoding="utf-8", errors="replace").strip()
+                if not text or len(text) > max_chars:
+                    continue
+                records.append(_record_from_file(path, source, text))
     for seed_path in seed_paths:
         records.extend(_load_jsonl(seed_path))
     return records
@@ -118,6 +131,52 @@ def _iter_sysml_files(root: Path) -> Iterable[Path]:
         if any(part.startswith(".") or part in {"build", "target", "node_modules"} for part in path.parts):
             continue
         yield path
+
+
+def _folder_records(source: SourceSpec, max_chars: int) -> list[dict[str, Any]]:
+    groups: dict[Path, list[Path]] = {}
+    for path in _iter_sysml_files(source.root):
+        groups.setdefault(path.parent, []).append(path)
+    records: list[dict[str, Any]] = []
+    for folder in sorted(groups):
+        files = sorted(groups[folder])
+        parts: list[str] = []
+        for path in files:
+            text = path.read_text(encoding="utf-8", errors="replace").strip()
+            if text:
+                parts.append(text)
+        if not parts:
+            continue
+        merged = "\n\n".join(parts)
+        if len(merged) > max_chars:
+            continue
+        records.append(_record_from_folder(folder, files, source, merged))
+    return records
+
+
+def _record_from_folder(
+    folder: Path, files: list[Path], source: SourceSpec, text: str
+) -> dict[str, Any]:
+    relative = folder.relative_to(source.root).as_posix() or "."
+    file_names = [path.relative_to(source.root).as_posix() for path in files]
+    constructs = detect_constructs(text)
+    digest = hashlib.sha256(
+        f"{source.repo}|{source.commit}|{relative}|{text}".encode("utf-8")
+    ).hexdigest()[:12]
+    return {
+        "id": f"official_{digest}",
+        "instruction": _instruction_for_constructs(constructs),
+        "input": "",
+        "output": text,
+        "constructs": constructs,
+        "source": {
+            "repo": source.repo,
+            "commit": source.commit,
+            "path": relative,
+            "files": file_names,
+            "license": source.license,
+        },
+    }
 
 
 def _record_from_file(path: Path, source: SourceSpec, text: str) -> dict[str, Any]:

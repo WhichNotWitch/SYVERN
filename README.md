@@ -366,7 +366,7 @@ enumeration-style gaming. Any hit ⇒ `reward = 0`.
 ## Implementation status
 
 The pipeline, schema, reward map, anti-gaming, and monitoring surfaces are fully implemented and
-verified by **306 passing tests**. Milestones H1–H6 are delivered against the design baseline, with
+verified by **324 passing tests**. Milestones H1–H6 are delivered against the design baseline, with
 phase-2 slices for online parser-agreement semantics, prompt-grouped stable@k, and deterministic
 normalized/fuzzy structural matching plus deterministic GED accuracy, original-output-based IPT consistency, and honest heuristic
 intent source labeling, LRU/thread-locked caching with an optional SQLite backend, and explicit data-filter pass/drop

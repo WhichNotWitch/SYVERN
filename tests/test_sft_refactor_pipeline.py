@@ -16,6 +16,12 @@ class _Veto:
         self.triggered = triggered
 
 
+class _Meta:
+    def __init__(self) -> None:
+        self.validator_fingerprint = "test-fingerprint"
+        self.reward = 0.9
+
+
 class _ValidationResult:
     def __init__(self, *, parse=True, resolve=True, typecheck=True, veto=False) -> None:
         self.stage = type(
@@ -28,6 +34,8 @@ class _ValidationResult:
             },
         )()
         self.veto = _Veto(veto)
+        self.sample_id = "validation-sample"
+        self.meta = _Meta()
 
 
 def test_normalize_sft_record_maps_instruction_input_output_to_internal_sample():
@@ -115,6 +123,7 @@ def test_run_sft_prepare_outputs_kept_rejected_and_report(tmp_path):
     assert result.summary["read"] == 2
     assert result.summary["kept"] == 1
     assert result.summary["rejected"] == 1
+    assert result.summary["validator_fingerprint"] == "test-fingerprint"
     assert result.summary["reason_counts"] == {"low_requirement_coverage": 1, "passed": 1}
     kept = [json.loads(line) for line in (output_dir / "kept.jsonl").read_text(encoding="utf-8").splitlines()]
     rejected = [
@@ -122,6 +131,9 @@ def test_run_sft_prepare_outputs_kept_rejected_and_report(tmp_path):
         for line in (output_dir / "rejected.jsonl").read_text(encoding="utf-8").splitlines()
     ]
     assert kept[0]["_syvern_sft"]["keep"] is True
+    assert kept[0]["_syvern_sft"]["validator_fingerprint"] == "test-fingerprint"
+    assert kept[0]["_syvern_sft"]["sample_id"] == "validation-sample"
+    assert kept[0]["_syvern_sft"]["reward"] == 0.9
     assert kept[0]["_syvern_coverage"]["score"] == 1.0
     assert rejected[0]["_syvern_sft"]["reason"] == "low_requirement_coverage"
 

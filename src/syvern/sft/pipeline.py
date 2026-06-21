@@ -44,9 +44,11 @@ def run_sft_prepare(
     kept: list[dict] = []
     rejected: list[dict] = []
     reason_counts: dict[str, int] = {}
+    validator_fingerprint: str | None = None
 
     for sample in samples:
         validation = validator(sample)
+        validator_fingerprint = validator_fingerprint or _validation_fingerprint(validation)
         coverage = (
             evaluator.evaluate(
                 sample.requirement_text,
@@ -64,7 +66,7 @@ def run_sft_prepare(
             min_coverage=min_coverage,
         )
         increment_count(reason_counts, reason)
-        annotated = _annotate(sample, coverage, keep=keep, reason=reason)
+        annotated = _annotate(sample, validation, coverage, keep=keep, reason=reason)
         if keep:
             kept.append(annotated)
         else:
@@ -78,6 +80,7 @@ def run_sft_prepare(
         "coverage_backend": coverage_backend,
         "min_coverage": min_coverage,
         "reason_counts": dict(sorted(reason_counts.items())),
+        "validator_fingerprint": validator_fingerprint,
     }
     output = Path(output_dir)
     write_jsonl(output / "kept.jsonl", kept)
@@ -96,6 +99,7 @@ def _coverage_evaluator(coverage_backend: str, min_coverage: float) -> CoverageE
 
 def _annotate(
     sample: SftSample,
+    validation: object,
     coverage: CoverageReport | None,
     *,
     keep: bool,
@@ -107,5 +111,24 @@ def _annotate(
     annotated["_syvern_sft"] = {
         "keep": keep,
         "reason": reason,
+        "sample_id": _validation_sample_id(sample, validation),
+        "reward": _validation_reward(validation),
+        "validator_fingerprint": _validation_fingerprint(validation),
     }
     return annotated
+
+
+def _validation_fingerprint(validation: object) -> str | None:
+    meta = getattr(validation, "meta", None)
+    value = getattr(meta, "validator_fingerprint", None)
+    return str(value) if value else None
+
+
+def _validation_reward(validation: object) -> object | None:
+    meta = getattr(validation, "meta", None)
+    return getattr(meta, "reward", None)
+
+
+def _validation_sample_id(sample: SftSample, validation: object) -> str:
+    value = getattr(validation, "sample_id", None)
+    return str(value or sample.sample_id)

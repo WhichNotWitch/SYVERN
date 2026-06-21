@@ -41,6 +41,37 @@ def test_build_sft_candidates_from_sysml_files_records_source_and_constructs(tmp
     }
 
 
+def test_build_sft_candidates_merge_by_folder_concatenates_one_record_per_folder(tmp_path):
+    source_root = tmp_path / "src"
+    folder = source_root / "examples" / "VehicleExample"
+    folder.mkdir(parents=True)
+    # Two files in one folder where one imports the other — only valid together.
+    (folder / "Defs.sysml").write_text("package Defs { part def Engine; }", encoding="utf-8")
+    (folder / "Usage.sysml").write_text(
+        "package Usage { import Defs::*; part def Vehicle { part engine : Engine; } }",
+        encoding="utf-8",
+    )
+    other = source_root / "examples" / "Other"
+    other.mkdir(parents=True)
+    (other / "A.sysml").write_text("package A { part def P; }", encoding="utf-8")
+
+    records = build_sft_candidates(
+        [SourceSpec(root=source_root, repo="official", commit="abc", license="EPL-2.0")],
+        merge_by_folder=True,
+    )
+
+    # One record per folder, not per file.
+    assert len(records) == 2
+    by_path = {record["source"]["path"]: record for record in records}
+    vehicle = by_path["examples/VehicleExample"]
+    assert "package Defs" in vehicle["output"] and "package Usage" in vehicle["output"]
+    assert vehicle["source"]["files"] == [
+        "examples/VehicleExample/Defs.sysml",
+        "examples/VehicleExample/Usage.sysml",
+    ]
+    assert by_path["examples/Other"]["output"] == "package A { part def P; }"
+
+
 def test_dedupe_by_output_keeps_first_record_and_coverage_counts_constructs():
     records = [
         {"id": "a", "output": "package A { part def P; }", "constructs": ["package", "part"]},

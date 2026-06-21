@@ -18,16 +18,26 @@ Raw checkouts and intermediate files are intentionally ignored by git:
 
 ## Rebuild
 
-Start Pilot on `8888` and SYVERN API on `8000`, then run:
+Pilot must run on `8888` **with the repo's own SysML library loaded** so the
+examples' domain-library imports (`ShapeItems`, `SpatialItems`, `Quantities`,
+`AnalysisTooling`, …) resolve — point `SYSML_LIBRARY_PATH` at
+`data/sft/raw_sources/sysml-v2-release/sysml.library`. Start the SYVERN API on
+`8000`, then run:
 
 ```powershell
 git clone --depth 1 https://github.com/Systems-Modeling/SysML-v2-Release.git data\sft\raw_sources\sysml-v2-release
 
+# Source root is sysml/src (examples + training + validation); the sysml.library
+# tree is the loaded library, not training data, so it is excluded.
+# --merge-by-folder (default on) treats each folder as one complete model: the
+# official examples cross-import sibling files, so per-file validation wrongly
+# fails resolve.
 python scripts\prepare_sft_data.py `
-  --source-root data\sft\raw_sources\sysml-v2-release `
+  --source-root data\sft\raw_sources\sysml-v2-release\sysml\src `
   --repo Systems-Modeling/SysML-v2-Release `
   --license EPL-2.0 `
   --seed data\sft\seed.jsonl `
+  --max-chars 80000 `
   --out data\sft\interim\candidates.jsonl `
   --report data\sft\reports\prepare_report.json
 
@@ -36,7 +46,7 @@ python scripts\validate_and_filter.py `
   --kept data\sft\interim\filtered.jsonl `
   --rejected data\sft\interim\rejected.jsonl `
   --report data\sft\reports\filter_report.json `
-  --endpoint http://127.0.0.1:8000
+  --endpoint http://127.0.0.1:8000 --batch-size 8 --timeout-s 180
 
 python scripts\split_sft_data.py `
   --in data\sft\interim\filtered.jsonl `
@@ -47,14 +57,18 @@ python scripts\split_sft_data.py `
 
 ## Current Build
 
-- Candidates: 308
-- Passed data filter: 237
-- Rejected: 71
-- Pass rate: 76.95%
-- Train: 213
-- Val: 24
+Folder-merged, with the repo's full SysML library loaded in Pilot:
+
+- Candidates: 99 (83 official folders under `sysml/src` + 16 seed)
+- Passed data filter: 86
+- Rejected: 13 (all `t0_failed`; 0 vetoed)
+- Pass rate: 86.9%
+- Train: 77 (62 official + 15 seed)
+- Val: 9
 - Duplicate outputs after filtering: 0
-- Train/val source-file overlap: 0
+- Train/val source-folder overlap: 0
+- Construct coverage (train): all 13 tracked constructs present
+  (interface 7, state 9, port 20, constraint 8, requirement 11, …)
 
 All final records pass the pinned validator fingerprint:
 
