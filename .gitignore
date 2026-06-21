@@ -1,5 +1,6 @@
 # Local machine configuration
 scripts/pilot-real.local.ps1
+.worktrees/
 
 # Python generated files
 __pycache__/
