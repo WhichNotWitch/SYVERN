@@ -7,6 +7,7 @@ from syvern.sft.instruction_aug import (
     output_sha256,
     parse_teacher_payload,
     select_sample_records,
+    summarize_augmentation,
 )
 
 
@@ -103,3 +104,102 @@ def test_build_augmented_records_preserves_parent_output_and_metadata():
     assert augmented[0]["instruction"] == candidates[0].instruction
     assert augmented[0]["_syvern_instruction_aug"]["augmented_from"] == "p1"
     assert augmented[0]["_syvern_instruction_aug"]["teacher_base_url_host"] == "example.test"
+
+
+def test_checker_rejects_leakage_phrases_and_invalid_language():
+    parent = _parent()
+    config = AugmentationConfig(
+        teacher_model="gpt-5.5", teacher_base_url="https://example.test/v1"
+    )
+    candidates = [
+        TeacherCandidate("zh_task", "zh", "请复制 the code below 并输出完全相同的模型。"),
+        TeacherCandidate("en_task", "fr", "Create a SysML v2 model for Vehicle."),
+    ]
+
+    augmented, failures = build_augmented_records(
+        parent, candidates, config=config, batch_id="sample"
+    )
+
+    assert augmented == []
+    assert {failure["reason"] for failure in failures} == {
+        "forbidden_phrase",
+        "invalid_language",
+    }
+
+
+def test_checker_rejects_identifier_names_not_present_in_output():
+    parent = _parent()
+    config = AugmentationConfig(
+        teacher_model="gpt-5.5", teacher_base_url="https://example.test/v1"
+    )
+    candidates = [
+        TeacherCandidate("en_task", "en", "Create a SysML v2 model for AircraftController.")
+    ]
+
+    augmented, failures = build_augmented_records(
+        parent, candidates, config=config, batch_id="sample"
+    )
+
+    assert augmented == []
+    assert failures[0]["reason"] == "unsupported_identifier"
+
+
+def test_checker_rejects_duplicate_sibling_instructions():
+    parent = _parent()
+    config = AugmentationConfig(
+        teacher_model="gpt-5.5", teacher_base_url="https://example.test/v1"
+    )
+    candidates = [
+        TeacherCandidate("zh_task", "zh", "用 SysML v2 建模 Vehicle，并包含 power 端口。"),
+        TeacherCandidate("zh_structural", "zh", "用   SysML v2 建模 Vehicle，并包含 power 端口。"),
+    ]
+
+    augmented, failures = build_augmented_records(
+        parent, candidates, config=config, batch_id="sample"
+    )
+
+    assert len(augmented) == 1
+    assert failures[0]["reason"] == "duplicate_instruction"
+
+
+def test_summary_counts_language_variants_and_failures():
+    parent = _parent()
+    config = AugmentationConfig(
+        teacher_model="gpt-5.5", teacher_base_url="https://example.test/v1"
+    )
+    augmented, failures = build_augmented_records(
+        parent,
+        [
+            TeacherCandidate("zh_task", "zh", "用 SysML v2 建模 Vehicle，并包含 power 端口。"),
+            TeacherCandidate("en_task", "fr", "Create a SysML v2 model for Vehicle."),
+        ],
+        config=config,
+        batch_id="sample",
+    )
+
+    report = summarize_augmentation(source_count=1, augmented=augmented, failures=failures)
+
+    assert report["source_count"] == 1
+    assert report["accepted_count"] == 1
+    assert report["rejected_count"] == 1
+    assert report["language_counts"] == {"zh": 1}
+    assert report["failure_reason_counts"] == {"invalid_language": 1}
+
+
+def test_checker_warns_for_generic_instruction_with_low_identifier_overlap():
+    parent = _parent()
+    config = AugmentationConfig(
+        teacher_model="gpt-5.5", teacher_base_url="https://example.test/v1"
+    )
+
+    augmented, failures = build_augmented_records(
+        parent,
+        [TeacherCandidate("en_task", "en", "Write a SysML v2 model with parts and ports.")],
+        config=config,
+        batch_id="sample",
+    )
+
+    assert failures == []
+    assert augmented[0]["_syvern_instruction_aug"]["checks"]["warnings"] == [
+        "low_identifier_overlap"
+    ]
