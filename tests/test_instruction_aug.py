@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from syvern.sft.instruction_aug import (
     AugmentationConfig,
@@ -6,6 +7,7 @@ from syvern.sft.instruction_aug import (
     build_augmented_records,
     output_sha256,
     parse_teacher_payload,
+    run_instruction_augmentation,
     select_sample_records,
     summarize_augmentation,
 )
@@ -21,6 +23,34 @@ def _parent(record_id="p1", output="package VehicleModel { part def Vehicle { po
         "source": {"repo": "local", "path": "seed"},
         "_syvern": {"pass": True, "validator_fingerprint": "fp"},
     }
+
+
+class FakeTeacher:
+    def generate(self, record):
+        return [
+            TeacherCandidate(
+                "zh_task",
+                "zh",
+                f"用 SysML v2 建模 {record['id']} 中的 Vehicle 和 power 端口。",
+            ),
+            TeacherCandidate(
+                "zh_structural",
+                "zh",
+                f"定义 {record['id']} 的 Vehicle 部件并声明 power 端口。",
+            ),
+            TeacherCandidate(
+                "en_task",
+                "en",
+                f"Create a SysML v2 model for {record['id']} with a Vehicle power port.",
+            ),
+        ]
+
+
+def _write_jsonl(path: Path, records):
+    path.write_text(
+        "\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n",
+        encoding="utf-8",
+    )
 
 
 def test_output_sha256_is_stable_for_parent_output():
@@ -203,3 +233,70 @@ def test_checker_warns_for_generic_instruction_with_low_identifier_overlap():
     assert augmented[0]["_syvern_instruction_aug"]["checks"]["warnings"] == [
         "low_identifier_overlap"
     ]
+
+
+def test_run_instruction_augmentation_sample_writes_jsonl_and_report(tmp_path):
+    train = tmp_path / "train.jsonl"
+    val = tmp_path / "val.jsonl"
+    _write_jsonl(train, [_parent("Vehicle")])
+    _write_jsonl(val, [_parent("VehicleModel")])
+
+    result = run_instruction_augmentation(
+        train_path=train,
+        val_path=val,
+        output_dir=tmp_path / "instruction_aug",
+        mode="sample",
+        teacher=FakeTeacher(),
+        config=AugmentationConfig(
+            teacher_model="gpt-5.5", teacher_base_url="https://example.test/v1"
+        ),
+        sample_limit=1,
+    )
+
+    assert result.report["source_count"] == 1
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "instruction_aug" / "sample_aug.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert len(rows) == 3
+    assert rows[0]["_syvern_instruction_aug"]["batch_id"] == "sample"
+    assert (tmp_path / "instruction_aug" / "reports" / "sample_report.json").exists()
+
+
+def test_run_instruction_augmentation_full_preserves_train_val_splits(tmp_path):
+    train = tmp_path / "train.jsonl"
+    val = tmp_path / "val.jsonl"
+    _write_jsonl(train, [_parent("Vehicle")])
+    _write_jsonl(val, [_parent("VehicleModel")])
+
+    run_instruction_augmentation(
+        train_path=train,
+        val_path=val,
+        output_dir=tmp_path / "instruction_aug",
+        mode="full",
+        teacher=FakeTeacher(),
+        config=AugmentationConfig(
+            teacher_model="gpt-5.5", teacher_base_url="https://example.test/v1"
+        ),
+    )
+
+    train_rows = [
+        json.loads(line)
+        for line in (tmp_path / "instruction_aug" / "train_aug.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    val_rows = [
+        json.loads(line)
+        for line in (tmp_path / "instruction_aug" / "val_aug.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert {row["_syvern_instruction_aug"]["augmented_from"] for row in train_rows} == {
+        "Vehicle"
+    }
+    assert {row["_syvern_instruction_aug"]["augmented_from"] for row in val_rows} == {
+        "VehicleModel"
+    }

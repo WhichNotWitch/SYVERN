@@ -5,8 +5,11 @@ import json
 import re
 from collections import Counter
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Iterable, Mapping
 from urllib.parse import urlparse
+
+from syvern.sft.exporter import write_json, write_jsonl
 
 
 PROMPT_VERSION = "instruction-aug-v1"
@@ -44,6 +47,13 @@ class TeacherCandidate:
     variant: str
     language: str
     instruction: str
+
+
+@dataclass(frozen=True)
+class AugmentationRunResult:
+    augmented: list[dict[str, Any]]
+    failures: list[dict[str, Any]]
+    report: dict[str, Any]
 
 
 def output_sha256(text: str) -> str:
@@ -98,6 +108,60 @@ def select_sample_records(records: Iterable[Mapping[str, Any]], *, limit: int) -
         covered.update(_construct_set(record))
 
     return selected
+
+
+def run_instruction_augmentation(
+    *,
+    train_path: str | Path,
+    val_path: str | Path,
+    output_dir: str | Path,
+    mode: str,
+    teacher: Any,
+    config: AugmentationConfig,
+    sample_limit: int = 20,
+    batch_id: str | None = None,
+) -> AugmentationRunResult:
+    train_records = _load_jsonl(Path(train_path))
+    val_records = _load_jsonl(Path(val_path))
+    output = Path(output_dir)
+
+    if mode == "sample":
+        records = select_sample_records([*train_records, *val_records], limit=sample_limit)
+        result = _augment_records(records, teacher=teacher, config=config, batch_id=batch_id or "sample")
+        report = summarize_augmentation(
+            source_count=len(records), augmented=result.augmented, failures=result.failures
+        )
+        _write_outputs(output, "sample_aug.jsonl", "sample_report.json", result.augmented, report)
+        return AugmentationRunResult(
+            augmented=result.augmented,
+            failures=result.failures,
+            report=report,
+        )
+
+    if mode == "full":
+        train_result = _augment_records(
+            train_records, teacher=teacher, config=config, batch_id=batch_id or "full_train"
+        )
+        val_result = _augment_records(
+            val_records, teacher=teacher, config=config, batch_id=batch_id or "full_val"
+        )
+        train_report = summarize_augmentation(
+            source_count=len(train_records),
+            augmented=train_result.augmented,
+            failures=train_result.failures,
+        )
+        val_report = summarize_augmentation(
+            source_count=len(val_records), augmented=val_result.augmented, failures=val_result.failures
+        )
+        _write_outputs(output, "train_aug.jsonl", "train_report.json", train_result.augmented, train_report)
+        _write_outputs(output, "val_aug.jsonl", "val_report.json", val_result.augmented, val_report)
+        return AugmentationRunResult(
+            augmented=[*train_result.augmented, *val_result.augmented],
+            failures=[*train_result.failures, *val_result.failures],
+            report={"train": train_report, "val": val_report},
+        )
+
+    raise ValueError(f"unsupported augmentation mode {mode}")
 
 
 def build_augmented_records(
@@ -185,6 +249,64 @@ def summarize_augmentation(
         "failure_reason_counts": dict(sorted(failure_reason_counts.items())),
         "failures": failure_rows,
     }
+
+
+def _augment_records(
+    records: Iterable[Mapping[str, Any]],
+    *,
+    teacher: Any,
+    config: AugmentationConfig,
+    batch_id: str,
+) -> AugmentationRunResult:
+    augmented: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    source_count = 0
+    for record in records:
+        source_count += 1
+        try:
+            candidates = teacher.generate(record)
+        except Exception as exc:  # pragma: no cover - defensive around network clients
+            failures.append(
+                {
+                    "augmented_from": str(record.get("id", "")),
+                    "reason": "teacher_error",
+                    "message": str(exc),
+                }
+            )
+            continue
+        record_augmented, record_failures = build_augmented_records(
+            record, candidates, config=config, batch_id=batch_id
+        )
+        augmented.extend(record_augmented)
+        failures.extend(record_failures)
+    report = summarize_augmentation(
+        source_count=source_count, augmented=augmented, failures=failures
+    )
+    return AugmentationRunResult(augmented=augmented, failures=failures, report=report)
+
+
+def _write_outputs(
+    output_dir: Path,
+    jsonl_name: str,
+    report_name: str,
+    augmented: Iterable[Mapping[str, Any]],
+    report: Mapping[str, Any],
+) -> None:
+    write_jsonl(output_dir / jsonl_name, augmented)
+    write_json(output_dir / "reports" / report_name, report)
+
+
+def _load_jsonl(path: Path) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        payload = json.loads(stripped)
+        if not isinstance(payload, dict):
+            raise ValueError(f"{path}: JSONL records must be objects")
+        records.append(payload)
+    return records
 
 
 def _construct_set(record: Mapping[str, Any]) -> set[str]:
