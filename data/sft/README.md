@@ -71,13 +71,19 @@ Folder-merged, with the repo's full SysML library loaded in Pilot:
   the gate (`scripts/decompose_sft_data.py`). Decomposed train/val sub-models are
   deduped and kept in their parent's split (no leakage); each carries
   `source.decomposed_from`. Added: train +156, val +15.
-- **Final dataset: 270 records** — Train 245 / Val 25
+- Validated models after decomposition: 270 (train 245 / val 25)
   (origin: 16 seed + 70 official folder-merged + 13 human-resolved + 171 decomposed)
-- Duplicate outputs: 0 · Train/val output overlap: 0
-- Construct coverage (train): all 13 present
-  (part 203, attribute 142, action 81, item 53, port 49, connection 42,
-  redefinition 36, requirement 32, state 25, constraint 22, interface 17, subsetting 15)
-- Re-validation: seed 16/16, train 245/245, val 25/25 pass the pinned fingerprint
+- **Instruction augmentation**: a `gpt-5.5` teacher rewrites each model's
+  instruction into 3 natural variants (`zh_task`, `zh_structural`, `en_task`)
+  via `scripts/augment_sft_instructions.py`. **Output (code) is byte-identical to
+  the validated parent** (verified: 0/810 drift) so it still passes the gate; only
+  the instruction changes. The weak construct-list template instructions are
+  dropped — each model now carries its 3 GPT-5.5 instructions. Provenance in
+  `_syvern_instruction_aug` (teacher_model, parent_output_sha256, variant, …).
+- **Final dataset: 810 records** — Train 735 / Val 75 (270 models × 3 instructions)
+- Duplicate outputs: 0 · Train/val output overlap: 0 (augmentation is per-split)
+- Construct coverage unchanged from the 270 validated models (code is identical).
+- Re-validation: seed 16/16, train 735/735, val 75/75 pass the pinned fingerprint
 
 All final records pass the pinned validator fingerprint:
 
