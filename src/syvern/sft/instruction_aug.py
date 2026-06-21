@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from syvern.sft.exporter import write_json, write_jsonl
 
 
-PROMPT_VERSION = "instruction-aug-v1"
+PROMPT_VERSION = "instruction-aug-v2"
 EXPECTED_VARIANTS = ("zh_task", "zh_structural", "en_task")
 EXPECTED_LANGUAGES = ("zh", "en")
 FORBIDDEN_PHRASES = (
@@ -24,15 +24,98 @@ FORBIDDEN_PHRASES = (
 )
 GENERIC_IDENTIFIERS = {
     "SysML",
+    "SysMLv2",
     "Model",
     "System",
     "Vehicle",
+
+    # Generic modeling verbs / request words
     "Create",
     "Write",
     "Define",
+    "Add",
+    "Build",
+    "Make",
+    "Provide",
+    "Generate",
+    "Model",
+    "Represent",
+    "Specify",
+    "Show",
+    "Include",
+    "Use",
+    "Describe",
+
+    # Common English sentence starters / function words
+    "The",
+    "This",
+    "That",
+    "These",
+    "Those",
+    "A",
+    "An",
+    "Inside",
+    "Within",
+    "Containing",
+    "Named",
 }
+SENTENCE_START_GENERIC_IDENTIFIERS = {
+    "The",
+    "This",
+    "That",
+    "These",
+    "Those",
+    "A",
+    "An",
+    "Add",
+    "Create",
+    "Define",
+    "Write",
+    "Build",
+    "Make",
+    "Provide",
+    "Generate",
+    "Model",
+    "Represent",
+    "Specify",
+    "Show",
+    "Include",
+    "Use",
+    "Inside",
+    "Within",
+    "Containing",
+    "Named",
+}
+
+
+def _instruction_identifier_spans(text: str) -> list[tuple[str, int]]:
+    return [
+        (match.group(0), match.start())
+        for match in re.finditer(r"\b[A-Z][A-Za-z0-9_]*[a-z0-9][A-Za-z0-9_]*\b", text)
+    ]
+
+
+def _is_sentence_start(text: str, start: int) -> bool:
+    prefix = text[:start].rstrip()
+    if not prefix:
+        return True
+    if prefix[-1] in ".!?:;\n([{":
+        return True
+    if prefix.endswith(("-", "•")):
+        return True
+    return False
+
+
+def _is_generic_instruction_word(identifier: str, text: str, start: int) -> bool:
+    if identifier in GENERIC_IDENTIFIERS:
+        return True
+    if identifier in SENTENCE_START_GENERIC_IDENTIFIERS and _is_sentence_start(text, start):
+        return True
+    return False
 MIN_INSTRUCTION_CHARS = 8
 MAX_INSTRUCTION_CHARS = 500
+MAX_ZH_INSTRUCTION_CHARS = 120
+MAX_EN_INSTRUCTION_WORDS = 45
 
 
 @dataclass(frozen=True)
@@ -55,6 +138,21 @@ class AugmentationRunResult:
     failures: list[dict[str, Any]]
     report: dict[str, Any]
 
+
+def _english_word_count(text: str) -> int:
+    return len(re.findall(r"\b[A-Za-z0-9_'-]+\b", text))
+
+
+def _exceeds_language_length(candidate: TeacherCandidate) -> bool:
+    instruction = candidate.instruction.strip()
+
+    if candidate.language == "zh":
+        return len(instruction) > MAX_ZH_INSTRUCTION_CHARS
+
+    if candidate.language == "en":
+        return _english_word_count(instruction) > MAX_EN_INSTRUCTION_WORDS
+
+    return len(instruction) > MAX_INSTRUCTION_CHARS
 
 def output_sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -330,6 +428,7 @@ def _candidate_failure_reason(
     seen_instructions: set[str],
 ) -> str | None:
     instruction = candidate.instruction.strip()
+
     if not instruction:
         return "empty_instruction"
     if len(instruction) < MIN_INSTRUCTION_CHARS or len(instruction) > MAX_INSTRUCTION_CHARS:
@@ -338,25 +437,35 @@ def _candidate_failure_reason(
         return "invalid_variant"
     if candidate.language not in EXPECTED_LANGUAGES:
         return "invalid_language"
+    if _exceeds_language_length(candidate):
+        return "invalid_length"
     if any(phrase.lower() in instruction.lower() for phrase in FORBIDDEN_PHRASES):
         return "forbidden_phrase"
     if _normalize_instruction(instruction) in seen_instructions:
         return "duplicate_instruction"
     if output_hash != expected_output_hash:
         return "output_hash_mismatch"
+
     unsupported = _unsupported_identifiers(instruction, output)
     if unsupported:
         return "unsupported_identifier"
+
     return None
 
 
 def _candidate_warnings(candidate: TeacherCandidate, *, output: str) -> list[str]:
-    identifiers = _instruction_identifiers(candidate.instruction)
-    output_identifiers = set(_instruction_identifiers(output))
-    meaningful = [identifier for identifier in identifiers if identifier not in GENERIC_IDENTIFIERS]
+    output_identifiers = _instruction_identifiers(output)
+    meaningful = [
+        identifier
+        for identifier, start in _instruction_identifier_spans(candidate.instruction)
+        if not _is_generic_instruction_word(identifier, candidate.instruction, start)
+    ]
+
     if not meaningful:
         return ["low_identifier_overlap"]
-    if meaningful and not any(identifier in output_identifiers for identifier in meaningful):
+    if meaningful and not any(
+        _identifier_supported_by_output(identifier, output_identifiers) for identifier in meaningful
+    ):
         return ["low_identifier_overlap"]
     return []
 
@@ -376,15 +485,26 @@ def _normalize_instruction(text: str) -> str:
 
 
 def _unsupported_identifiers(instruction: str, output: str) -> list[str]:
-    output_identifiers = set(_instruction_identifiers(output))
+    output_identifiers = _instruction_identifiers(output)
     unsupported: list[str] = []
-    for identifier in _instruction_identifiers(instruction):
-        if identifier in GENERIC_IDENTIFIERS:
+
+    for identifier, start in _instruction_identifier_spans(instruction):
+        if _is_generic_instruction_word(identifier, instruction, start):
             continue
-        if identifier not in output_identifiers:
+        if not _identifier_supported_by_output(identifier, output_identifiers):
             unsupported.append(identifier)
+
     return unsupported
 
 
 def _instruction_identifiers(text: str) -> list[str]:
     return re.findall(r"\b[A-Z][A-Za-z0-9_]*[a-z0-9][A-Za-z0-9_]*\b", text)
+
+
+def _identifier_supported_by_output(identifier: str, output_identifiers: Iterable[str]) -> bool:
+    if identifier in output_identifiers:
+        return True
+    if len(identifier) < 4:
+        return False
+    folded = identifier.casefold()
+    return any(folded in output_identifier.casefold() for output_identifier in output_identifiers)

@@ -178,6 +178,54 @@ def test_checker_rejects_identifier_names_not_present_in_output():
     assert failures[0]["reason"] == "unsupported_identifier"
 
 
+def test_checker_allows_identifier_substrings_present_in_output():
+    parent = _parent(
+        "official_arrowhead",
+        "package AHFNorway { part def APISConsumer; } package AHFNorwaySequences { action transfer; }",
+    )
+    config = AugmentationConfig(
+        teacher_model="gpt-5.5", teacher_base_url="https://example.test/v1"
+    )
+    candidates = [
+        TeacherCandidate(
+            "en_task",
+            "en",
+            "Create a SysML v2 model for the Norway use case.",
+        )
+    ]
+
+    augmented, failures = build_augmented_records(
+        parent, candidates, config=config, batch_id="sample"
+    )
+
+    assert failures == []
+    assert len(augmented) == 1
+
+
+def test_checker_rejects_english_instruction_over_word_limit():
+    parent = _parent()
+    config = AugmentationConfig(
+        teacher_model="gpt-5.5", teacher_base_url="https://example.test/v1"
+    )
+    long_instruction = (
+        "Create a SysML v2 model for Vehicle with power ports and parts that "
+        "also describes extra modeling context repeatedly so this request has "
+        "more than forty five words while still mentioning only lowercase terms "
+        "and names that appear in the verified target output VehicleModel "
+        "Vehicle power VehicleModel Vehicle power VehicleModel."
+    )
+
+    augmented, failures = build_augmented_records(
+        parent,
+        [TeacherCandidate("en_task", "en", long_instruction)],
+        config=config,
+        batch_id="sample",
+    )
+
+    assert augmented == []
+    assert failures[0]["reason"] == "invalid_length"
+
+
 def test_checker_rejects_duplicate_sibling_instructions():
     parent = _parent()
     config = AugmentationConfig(

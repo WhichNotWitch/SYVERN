@@ -22,9 +22,17 @@ from syvern.sft.instruction_aug import (
 
 
 SYSTEM_PROMPT = """You are a conservative SysML v2 instruction writer.
-Read the target SysML v2 code and write natural SFT instructions that ask for
-that model. Do not invent domain facts that are not present in the code. Return
-strict JSON only."""
+
+Your job is to write natural SFT instructions that ask for the given verified
+SysML v2 model. The instruction should sound like a real user request, not a
+catalog, benchmark summary, or code inventory.
+
+Do not invent domain facts that are not present in the code.
+Do not ask to copy, reproduce, or refer to "the code below".
+For large models, summarize the main modeling intent instead of listing every
+package, construct, action, attribute, port, or requirement.
+
+Return strict JSON only."""
 
 
 def config_from_env() -> AugmentationConfig:
@@ -66,7 +74,7 @@ class OpenAICompatibleTeacher:
                 {"role": "user", "content": _user_prompt(record)},
             ],
             "temperature": 0.2,
-            "max_tokens": 900,
+            "max_tokens": 600,
         }
         response = self._post_json("/chat/completions", payload)
         content = _assistant_content(response)
@@ -137,9 +145,15 @@ Rules:
 - zh_task: Chinese natural user request.
 - zh_structural: Chinese engineering-style modeling request.
 - en_task: English natural user request.
-- Mention important names from the code when useful.
+- Prefer a user-like request over a catalog of constructs.
+- For large models, summarize the main modeling intent instead of listing every package, construct, action, attribute, port, or requirement.
+- Do not enumerate more than 5 identifiers in one instruction.
+- Chinese instructions must be <= 120 Chinese characters.
+- English instructions must be <= 45 words.
+- Mention important names from the code only when they are central to the request.
 - Do not ask to copy the code or refer to "the code below".
 - Do not invent semantics not supported by the code.
+- Do not describe the file as a test suite, dataset sample, benchmark, or catalog unless that is clearly the modeling intent.
 
 Record id: {record_id}
 Constructs: {constructs}
