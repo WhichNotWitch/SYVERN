@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from scripts.augment_sft_instructions import config_from_env
 from syvern.sft.instruction_aug import (
     AugmentationConfig,
     TeacherCandidate,
@@ -300,3 +301,27 @@ def test_run_instruction_augmentation_full_preserves_train_val_splits(tmp_path):
     assert {row["_syvern_instruction_aug"]["augmented_from"] for row in val_rows} == {
         "VehicleModel"
     }
+
+
+def test_config_from_env_requires_teacher_environment(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("SYVERN_TEACHER_MODEL", raising=False)
+
+    try:
+        config_from_env()
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("config_from_env should exit when teacher env is missing")
+
+
+def test_config_from_env_reads_non_secret_settings(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://example.test/v1")
+    monkeypatch.setenv("SYVERN_TEACHER_MODEL", "gpt-5.5")
+
+    config = config_from_env()
+
+    assert config.teacher_model == "gpt-5.5"
+    assert config.teacher_base_url == "https://example.test/v1"

@@ -91,3 +91,51 @@ Reports:
 - `reports/filter_report.json`: data-filter pass rate and rejection reasons.
 - `reports/split_report.json`: dedupe, train/val sizes, and construct coverage.
 - `reports/train_filter_report.json` and `reports/val_filter_report.json`: final pass checks.
+
+## Instruction Augmentation
+
+Instruction-side augmentation keeps the verified SysML `output` text unchanged
+and creates bilingual natural instructions for the same code. Generated records
+are written under `data/sft/instruction_aug/`; the canonical `train.jsonl` and
+`val.jsonl` files are not modified.
+
+Set teacher-provider configuration through environment variables. Use a real API
+key only in your local shell; do not commit it or paste it into reports.
+
+```powershell
+$env:OPENAI_API_KEY = "<your-api-key>"
+$env:OPENAI_BASE_URL = "https://example.test/v1"
+$env:SYVERN_TEACHER_MODEL = "gpt-5.5"
+```
+
+Run a small sample trial first:
+
+```powershell
+python scripts\augment_sft_instructions.py `
+  --mode sample `
+  --train data\sft\train.jsonl `
+  --val data\sft\val.jsonl `
+  --out-dir data\sft\instruction_aug `
+  --sample-limit 20 `
+  --batch-id sample
+```
+
+Review:
+
+- `data/sft/instruction_aug/sample_aug.jsonl`
+- `data/sft/instruction_aug/reports/sample_report.json`
+
+After the sample quality is acceptable, run full split-preserving generation:
+
+```powershell
+python scripts\augment_sft_instructions.py `
+  --mode full `
+  --train data\sft\train.jsonl `
+  --val data\sft\val.jsonl `
+  --out-dir data\sft\instruction_aug `
+  --batch-id full
+```
+
+Full generation writes `train_aug.jsonl`, `val_aug.jsonl`, and reports under
+`data/sft/instruction_aug/reports/`. Train-derived records stay in train, and
+validation-derived records stay in validation.
